@@ -2,6 +2,10 @@ module  -- shake: keep-all --deprecated_module: ignore
 
 public import Algolean.AddWriter.Basic
 public import Algolean.Algorithms.Circuits.FanInTwo.LogAnd
+public import Algolean.Algorithms.GaussianJL
+public import Algolean.Algorithms.GaussianJLProbability
+public import Algolean.Algorithms.GaussianSampling
+public import Algolean.Algorithms.GaussianSamplingProbability
 public import Algolean.Algorithms.KMPPatternSearch
 public import Algolean.Algorithms.ListInsertionSort
 public import Algolean.Algorithms.ListLinearSearch
@@ -25,6 +29,9 @@ public import Algolean.Models.Quantum.Embed
 public import Algolean.Models.Quantum.Indexing
 public import Algolean.Models.Quantum.Oracle
 public import Algolean.Models.RandomSample
+public import Algolean.Models.RealRAM
+public import Algolean.Models.RealRAM.ContinuousRandom
+public import Algolean.Models.RealRAM.Extensions
 public import Algolean.Models.ReadOnlyVec
 public import Algolean.Models.ReadWriteVec
 public import Algolean.Models.RobertsonWebb
