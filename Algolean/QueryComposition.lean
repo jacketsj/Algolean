@@ -40,6 +40,46 @@ def Model.compose [AddZero c₁] [AddZero c₂]
     | .inl q => (m₁.cost q, 0)
     | .inr q => (0, m₂.cost q)
 
+/--
+Combine two query models that use the same cost type.
+
+Unlike `Model.compose`, which keeps the two costs in separate components of a product,
+`Model.combine` charges both kinds of query directly in `Cost`. This is useful when query effects
+are modular pieces of one machine instruction set.
+-/
+def Model.combine (m₁ : Model Q₁ Cost) (m₂ : Model Q₂ Cost) :
+    Model (compositeQuery Q₁ Q₂) Cost where
+  evalQuery
+    | .inl q => m₁.evalQuery q
+    | .inr q => m₂.evalQuery q
+  cost
+    | .inl q => m₁.cost q
+    | .inr q => m₂.cost q
+
+@[simp, grind =]
+theorem Model.evalQuery_combine_left
+    {m₁ : Model Q₁ Cost} {m₂ : Model Q₂ Cost} {q : Q₁ i} :
+    (m₁.combine m₂).evalQuery (Sum.inl q) = m₁.evalQuery q := by
+  rfl
+
+@[simp, grind =]
+theorem Model.evalQuery_combine_right
+    {m₁ : Model Q₁ Cost} {m₂ : Model Q₂ Cost} {q : Q₂ i} :
+    (m₁.combine m₂).evalQuery (Sum.inr q) = m₂.evalQuery q := by
+  rfl
+
+@[simp, grind =]
+theorem Model.cost_combine_left
+    {m₁ : Model Q₁ Cost} {m₂ : Model Q₂ Cost} {q : Q₁ i} :
+    (m₁.combine m₂).cost (Sum.inl q) = m₁.cost q := by
+  rfl
+
+@[simp, grind =]
+theorem Model.cost_combine_right
+    {m₁ : Model Q₁ Cost} {m₂ : Model Q₂ Cost} {q : Q₂ i} :
+    (m₁.combine m₂).cost (Sum.inr q) = m₂.cost q := by
+  rfl
+
 @[simp, grind =]
 theorem Model.evalQuery_compose_left [AddZero c₁] [AddZero c₂]
     {m₁ : Model Q₁ c₁} {m₂ : Model Q₂ c₂} {q : Q₁ i} :
