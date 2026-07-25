@@ -60,10 +60,13 @@ def SolvesWithinModel [AddZero Cost] [Preorder Cost]
     (M : Model Q Cost) (bound : Cost) : Prop :=
   prob.spec M (P.eval M) ∧ P.time M ≤ bound
 
-/-- `P` solves `prob` within cost `bound` for all models.
-This is the oracle-universal version, used when the program must be
-correct regardless of which oracle it faces (e.g., comparison sort
-must work for all orderings). -/
+/--
+`P` solves `prob` within cost `bound` for every model, including every possible `cost` field.
+
+For universal correctness over an intended family of oracle semantics with a fixed cost
+normalization, use `Solves` for correctness and prove `SolvesWithinModel` for each model in that
+family.
+-/
 def SolvesWithin [AddZero Cost] [Preorder Cost]
     (P : Prog Q α) (prob : QueryProblem Q Cost α) (bound : Cost) : Prop :=
   ∀ M : Model Q Cost, SolvesWithinModel P prob M bound
@@ -102,7 +105,7 @@ theorem SolvesWithinModel.bind [AddCommMonoid Cost] [Preorder Cost]
   · rwa [Prog.eval_bind]
   · rw [Prog.time_bind]; exact add_le_add htime htime'
 
-/-- Oracle-universal version of bind composition. -/
+/-- All-model version of bind composition. -/
 theorem SolvesWithin.bind [AddCommMonoid Cost] [Preorder Cost]
     [CovariantClass Cost Cost (· + ·) (· ≤ ·)]
     {op : Prog Q α} {cont : α → Prog Q β}

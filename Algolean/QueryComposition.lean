@@ -21,14 +21,13 @@ namespace Algolean.Algorithms
 
 open Cslib
 
-/-- Given two queries Q₁ and Q₂, creates a new query over the sum type -/
+/-- Given two queries `Q₁` and `Q₂`, create a new query over their sum. -/
 abbrev compositeQuery (Q₁ Q₂ : Type u → Type v) : Type u → Type v :=
   fun β => Sum (Q₁ β) (Q₂ β)
 
-/-- Given two models m₁ and m₂ with query operations Q₁ and Q₂ and
-    costs c₁ and c₂, creates a new mode with query operations over
-    the sume type of Q₁ and Q₂ and with the costs as a product type of
-    c₁ and c₂
+/--
+Given models for `Q₁` and `Q₂`, create a model for their sum whose cost is the product of the two
+cost types.
 -/
 def Model.compose [AddZero c₁] [AddZero c₂]
     (m₁ : Model Q₁ c₁) (m₂ : Model Q₂ c₂) :
@@ -153,6 +152,15 @@ theorem Prog.extend_eval {Q₁ α Q₂ c₁ c₂} [AddZero c₁] [AddZero c₂] 
     simp [extend, ih]
 
 @[simp, grind =]
+theorem Prog.extend_eval_combine {Q₁ α Q₂ Cost} {P : Prog Q₁ α}
+    {M₁ : Model Q₁ Cost} {M₂ : Model Q₂ Cost} :
+    (P.extend Q₂).eval (M₁.combine M₂) = P.eval M₁ := by
+  induction P with
+  | pure value => simp [extend]
+  | liftBind query next induction =>
+    simp [extend, induction]
+
+@[simp, grind =]
 theorem Prog.extend_time {Q₁ α Q₂ c₁ c₂} [AddCommMonoid c₁] [AddCommMonoid c₂] {P : Prog Q₁ α}
     {M₁ : Model Q₁ c₁} {M₂ : Model Q₂ c₂} :
     ((P.extend Q₂).time (M₁.compose M₂)) = (P.time M₁, 0) := by
@@ -160,5 +168,14 @@ theorem Prog.extend_time {Q₁ α Q₂ c₁ c₂} [AddCommMonoid c₁] [AddCommM
   | pure a => simp [extend, Prod.zero_eq_mk]
   | liftBind op cond ih =>
     simp [extend, ih]
+
+@[simp, grind =]
+theorem Prog.extend_time_combine {Q₁ α Q₂ Cost} [AddCommMonoid Cost] {P : Prog Q₁ α}
+    {M₁ : Model Q₁ Cost} {M₂ : Model Q₂ Cost} :
+    (P.extend Q₂).time (M₁.combine M₂) = P.time M₁ := by
+  induction P with
+  | pure value => simp [extend]
+  | liftBind query next induction =>
+    simp [extend, induction]
 
 end Algolean.Algorithms

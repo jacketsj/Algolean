@@ -19,6 +19,8 @@ public import Algolean.Complexity.PolytimeBasicClasses
 public import Algolean.FreeWP.Effects
 public import Algolean.FreeWP.WP
 public import Algolean.LowerBounds.ComparisonSort
+public import Algolean.Machine
+public import Algolean.Machine.RealRAM
 public import Algolean.Models.Circuits
 public import Algolean.Models.Comparison
 public import Algolean.Models.FanInTwoCircuits
@@ -38,3 +40,4 @@ public import Algolean.Models.RobertsonWebb
 public import Algolean.Models.SingleTapeTM
 public import Algolean.QueryComposition
 public import Algolean.QueryModel
+public import Algolean.Tutorial

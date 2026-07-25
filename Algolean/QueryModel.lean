@@ -27,7 +27,8 @@ parametric type of query operations.
 ## How to set up an algorithm
 
 This model is a lightweight framework for specifying and verifying both the correctness
-and complexity of algorithms in lean. To specify an algorithm, one must:
+and complexity of algorithms in Lean. The checked end-to-end guide is in
+`Algolean/Tutorial.lean`. In brief:
 1. Define an inductive type of queries. This type must have at least one index parameter
    which determines the output type of the query. Additionally, it helps to have a parameter `α`
    on which the index type depends. This way, any instance parameters of `α` can be used easily
@@ -66,14 +67,14 @@ abbrev Model.timeQuery
   AddWriter.mk (M.evalQuery x) (M.cost x)
 
 /--
-A program is defined as a Free Monad over a Query type `Q` which operates on a base type `α`
-which can determine the input and output types of a query.
+A program returning `α` is a free monad over the indexed query type `Q`. Each operation
+`q : Q ι` determines its own answer type `ι`; `α` is the complete program's return type.
 -/
 abbrev Prog Q α := Cslib.FreeM Q α
 
 
 /--
-The evaluation function of a program `P : Prog Q α` given a model `M : Model Q α` of `Q`
+The evaluation function of a program `P : Prog Q α` given a model `M : Model Q Cost` of `Q`
 -/
 def Prog.eval
     (P : Prog Q α) (M : Model Q Cost) : α :=
@@ -109,7 +110,7 @@ theorem Prog.eval_map
   simp [Prog.eval]
 
 /--
-The cost function of a program `P : Prog Q α` given a model `M : Model Q α` of `Q`.
+The cost function of a program `P : Prog Q α` given a model `M : Model Q Cost` of `Q`.
 The most common use case of this function is to compute time-complexity, hence the name.
 
 In practice this is only well-behaved in the presence of `AddCommMonoid Cost`.
@@ -221,6 +222,45 @@ theorem Prog.reduceProg_time [AddCommMonoid Cost]
         (cont (FreeM.liftM M₂.timeQuery (red.reduce op)).ret))).tell = _
     rw [← Prog.eval_eq_liftM_timeQuery_ret (red.reduce op) M₂, hCorrect op]
     simp_all only [eval_eq_liftM_timeQuery_ret, AddWriter.tell_bind]
+
+/--
+A reduction exactly implements a source model in a target model when every lowered query has the
+source query's result and cost.
+
+This is stronger than being a `Reduction`: arbitrary reductions need not preserve either
+semantics or cost. The source model should be specified independently rather than defined by the
+reduction, so that proving these two local obligations provides a meaningful audit boundary.
+-/
+structure Reduction.IsExact [AddZero Cost]
+    (red : Reduction Q₁ Q₂) (source : Model Q₁ Cost) (target : Model Q₂ Cost) : Prop where
+  /-- Every lowered query has the source query's specified result. -/
+  eval_query :
+    ∀ {ι} (query : Q₁ ι), (red.reduce query).eval target = source.evalQuery query
+  /-- Every lowered query has the source query's specified cost. -/
+  time_query :
+    ∀ {ι} (query : Q₁ ι), (red.reduce query).time target = source.cost query
+
+/-- Exact per-query implementation implies evaluation preservation for every source program. -/
+theorem Reduction.IsExact.reduceProg_eval [AddZero Cost]
+    {red : Reduction Q₁ Q₂} {source : Model Q₁ Cost} {target : Model Q₂ Cost}
+    (exact : Reduction.IsExact (Cost := Cost) red source target) (program : Prog Q₁ α) :
+    (program.reduceProg red).eval target = program.eval source :=
+  Prog.reduceProg_eval program red source target exact.eval_query
+
+/-- Exact per-query implementation implies cost preservation for every source program. -/
+theorem Reduction.IsExact.reduceProg_time [AddCommMonoid Cost]
+    {red : Reduction Q₁ Q₂} {source : Model Q₁ Cost} {target : Model Q₂ Cost}
+    (exact : Reduction.IsExact (Cost := Cost) red source target) (program : Prog Q₁ α) :
+    (program.reduceProg red).time target = program.time source := by
+  induction program with
+  | pure value =>
+      simp
+  | liftBind query next induction =>
+      change Prog.time
+          ((red.reduce query) >>= fun result => Prog.reduceProg (next result) red) target =
+        Prog.time (Cslib.FreeM.liftBind query next) source
+      rw [Prog.time_bind, exact.time_query, exact.eval_query, induction,
+        Prog.time_liftBind]
 
 end Reduction
 
