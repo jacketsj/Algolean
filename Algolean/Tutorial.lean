@@ -7,7 +7,7 @@ Authors: Algolean contributors
 module
 
 public import Algolean.Complexity.Basic
-public import Algolean.Machine.RealRAM
+public import Algolean.Models.RAM
 public import Algolean.QueryComposition
 
 /-!
@@ -160,73 +160,20 @@ are in `AlgoleanTests/FreeMonadWP.lean`; `Algolean/Algorithms/VecBubbleSort.lean
 invariants, while `Algolean/Algorithms/ListInsertionSort.lean` shows direct recursive evaluation
 and complexity proofs.
 
-## 8. Use `Machine.Program` for an independent algorithm witness
+## 8. Use a RAM when a uniform machine matters
 
-An arbitrary `Prog` contains Lean continuation functions, and pure terms may perform unrecorded
-work. For an independent existence statement, use the finite first-order source language:
+An arbitrary `Prog` contains Lean continuations and may perform uncharged pure work. The compact
+`RAM` model instead uses an ordinary finite instruction list with numeric jumps. Backward jumps
+give one fixed program input-dependent loops. `IntegerRAM`, `WordRAM`, and `RealRAM.Program` share
+the same instruction semantics; only their literal and arithmetic operations differ.
 
-```text
-Machine.Program
-    -- Program.compile input -->
-Prog (Machine.Query ...)
-    -- Prog.reduceProg implementation -->
-Prog TargetQuery
-    -- eval / time targetModel -->
-result and cost
-```
+`RAM.runFor` observes a program for a given number of unit-cost instructions and reports halt,
+timeout, or an invalid program counter. `RAM.Reaches` gives the corresponding unbounded
+small-step semantics. Data and addresses are separate types, so the real RAM does not silently
+acquire a floor or real-to-natural primitive. The existing real-RAM extensions provide matching
+typed machine instructions and can be combined with `RAM.sumExtra`.
 
-The important quantifier order is:
-
-```lean
-∃ program : Machine.Program language Exit,
-  ∀ oracle input,
-    SolvesWithinModel (run program input) (problem input) (model oracle) (bound input)
-```
-
-The witness is chosen before the runtime input and oracle. `Machine.Program` is a finite execution
-tree: runtime results select only already stored successors. Public size- or fuel-indexed
-algorithms can be families of finite trees. Runtime-dependent unbounded loops require a separate
-control-flow-graph or transition-system representation.
-
-`Program.compileFrom` exposes the same fixed structural translation starting from an existing
-state. It is useful when a surrounding development already has a machine state, but that caller
-then owns the state's input encoding, provenance, and cost. Because `Input` occurs only in the
-resulting query type, a call may need an explicit `(Input := ...)` argument.
-
-`RealRAMMachine` is the standard address-level adapter currently provided. It contains rational
-literals and register addresses, lowers memory/arithmetic operations to primitive `RealRAM`
-queries, and supplies an independently stated source model plus `Reduction.IsExact` proof. Its
-default input contract is pre-encoded `RealRAM.Memory`; clients with another input type must make
-their initializer and its cost explicit. A client changing the result representation likewise
-needs an explicit finalizer and output-decoding cost.
-
-Circuits, fan-in-two circuits, quantum circuits, and single-tape Turing machines already have
-native first-order syntax or transition data, so wrapping them in `Machine.Program` usually would
-duplicate their representation. The comparison, vector, sampling, Robertson--Webb, and
-quantum-oracle modules are query effects; they have no canonical private-state layout and
-therefore no standard machine adapter.
-
-## 9. Add an oracle
-
-An oracle is an ordinary indexed query type. Compose it with the base machine using
-`compositeQuery`:
-
-- `Model.combine` uses one shared cost type;
-- `Model.compose` keeps costs in separate product components; and
-- a `Reduction` lowers source machine operations to the composed target.
-
-The dependent example in `AlgoleanTests/MachineExamples.lean` uses a request-indexed vector
-response. Its reduction writes every returned coordinate into private RAM through charged queries,
-then exposes only a `Choice2` success status to source control flow. The input-independent theorem
-quantifies over every implementation of that dependent oracle.
-
-An ordinary reduction is not automatically correct or cost preserving. `Reduction.IsExact`
-collects two local obligations for each source query: equality of the result and equality of the
-complete lowered cost. Its `reduceProg_eval` and `reduceProg_time` theorems lift those facts to
-every source program. Reductions that have overhead or only upper bounds should instead use the
-more general reduction theorems and prove the relevant inequality.
-
-## 10. Audit the trust boundary
+## 9. Audit the trust boundary
 
 Before treating a theorem as an algorithmic guarantee, check:
 
@@ -236,20 +183,20 @@ Before treating a theorem as an algorithmic guarantee, check:
   restating the program's evaluation.
 - Pure Lean work outside emitted queries is uncharged.
 - Weakest preconditions prove functional behavior, not cost.
-- Instruction payloads, target query types, models, and reductions are specification components.
+- Instruction payloads, query types, models, and reductions are specification components.
 - A reduction must not hide numeric work or memory access in `pure`.
 - Initialization and finalization are charged, or the input/output encoding contract says
   explicitly that they are external.
-- `Machine.Program.compile` and `compileFrom` protect source programs translated through those
-  routes, not arbitrary `Prog` values; `compileFrom` leaves initial-state obligations to its caller.
+- RAM fuel bounds an observation of cyclic code. A successful theorem must prove a halted result
+  rather than treating `outOfFuel` as an answer.
+- For program families (including varying word widths), state and justify the uniformity and source
+  code size conditions needed by the intended complexity model.
 - Program construction is outside runtime input and oracle quantifiers.
 - Oracle robustness extends only over the functions or models actually quantified in the theorem.
 - The Lean kernel and any axioms used by imported mathematics remain foundational assumptions.
 
-The small lookup development above is the direct `Prog` route. For auditable independent machine
-code with a dependent oracle, continue with `AlgoleanTests/MachineExamples.lean`; for the standard
-address language and all three comparison branches, see
-`AlgoleanTests/MachineRealRAMExamples.lean`.
+The small lookup development above is the direct `Prog` route. Cyclic machine examples are in
+`AlgoleanTests/RAMExamples.lean`.
 -/
 
 end Algolean.Tutorial

@@ -2,17 +2,15 @@
 
 Algolean is a library of algorithms and complexity theory, defined broadly to include much of the Algorithms and Complexity theory literature. It is written in the lightweight free monad version of what I call the "query-combinator" model. It currently consists of code that lies in several CSLib pull requests. The framework can encompass standard and custom models in algorithms theory, ranging from RAM and Turing machines, to circuits, and even niche models like the Robertson-Webb cake cutting model. The intent is to provide an all-encompassing framework of models and reductions between them. Complexity claims are relative to the operations exposed as queries and their declared costs; pure Lean work is uncharged, so the chosen query language is part of the auditable specification.
 
-`Algolean.Machine` provides finite first-order machine code for independent algorithm-existence
-statements. Its fixed translations record instructions and finalization as ordinary `Prog`
-queries; `Program.compile` records initialization too, while `Program.compileFrom` makes an
-existing initial state the caller's explicit responsibility. Runtime values can select only
-successors already stored in the source tree. Existing models give those queries semantics and
-costs, while a `Reduction` can lower them to another query language, including one extended with
-an oracle.
+`Algolean.Models.RAM` is a small uniform machine model shared by integer RAM, word RAM, and real
+RAM. Programs are finite instruction lists with jumps, so one fixed program can contain
+input-dependent loops. Data and address registers have separate types, avoiding a hidden
+real-to-natural conversion in the real RAM. The existing square-root, power, exponential,
+logarithmic, trigonometric, root, and floor extensions also have typed program instructions.
 
 The checked module [`Algolean.Tutorial`](Algolean/Tutorial.lean) explains how to define a query
 language, prove functional correctness and cost, package a problem statement, choose between
-`Prog` and `Machine.Program`, add an oracle, and audit the resulting guarantee.
+`Prog` and a uniform RAM program, and audit the resulting guarantee.
 
 ## Nomenclature
 `Algolean` is a pun. It is intended to be read in two ways.

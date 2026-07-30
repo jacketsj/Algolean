@@ -19,8 +19,6 @@ public import Algolean.Complexity.PolytimeBasicClasses
 public import Algolean.FreeWP.Effects
 public import Algolean.FreeWP.WP
 public import Algolean.LowerBounds.ComparisonSort
-public import Algolean.Machine
-public import Algolean.Machine.RealRAM
 public import Algolean.Models.Circuits
 public import Algolean.Models.Comparison
 public import Algolean.Models.FanInTwoCircuits
@@ -31,6 +29,7 @@ public import Algolean.Models.Quantum.Embed
 public import Algolean.Models.Quantum.Indexing
 public import Algolean.Models.Quantum.Oracle
 public import Algolean.Models.RandomSample
+public import Algolean.Models.RAM
 public import Algolean.Models.RealRAM
 public import Algolean.Models.RealRAM.ContinuousRandom
 public import Algolean.Models.RealRAM.Extensions

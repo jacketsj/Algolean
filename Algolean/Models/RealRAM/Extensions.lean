@@ -6,7 +6,7 @@ Authors: Algolean contributors
 
 module
 
-public import Algolean.Models.RealRAM
+public import Algolean.Models.RAM
 public import Algolean.QueryComposition
 public import Mathlib.Analysis.SpecialFunctions.Pow.Real
 
@@ -325,6 +325,104 @@ theorem liftExtension_time [AddZeroClass Cost] (query : Extension α)
   simp [liftExtension, ofExtension, model]
 
 end ExtendedRealRAM
+
+/-! ## Uniform machine-code adapters -/
+
+namespace RealRAM.Sqrt
+
+/-- A uniform real-RAM program with primitive square root. -/
+abbrev MachineProgram := RealRAM.Program (RealRAM.UnaryInstruction RealRAM.Sqrt)
+
+/-- Run a uniform square-root real-RAM program. -/
+noncomputable def runMachineFor (program : MachineProgram) (fuel : ℕ)
+    (memory : RealRAM.MachineMemory) : RealRAM.RunResult :=
+  RealRAM.runUnaryFor Real.sqrt program fuel memory
+
+end RealRAM.Sqrt
+
+namespace RealRAM.NthRoot
+
+/-- A uniform real-RAM program with primitive arbitrary-degree roots. -/
+abbrev MachineProgram := RealRAM.Program (RealRAM.NthRootInstruction RealRAM.NthRoot)
+
+/-- Run a uniform arbitrary-root real-RAM program. -/
+noncomputable def runMachineFor (program : MachineProgram) (fuel : ℕ)
+    (memory : RealRAM.MachineMemory) : RealRAM.RunResult :=
+  RealRAM.runNthRootFor value program fuel memory
+
+end RealRAM.NthRoot
+
+namespace RealRAM.RealPow
+
+/-- A uniform real-RAM program with primitive real exponentiation. -/
+abbrev MachineProgram := RealRAM.Program (RealRAM.BinaryInstruction RealRAM.RealPow)
+
+/-- Run a uniform real-power RAM program. -/
+noncomputable def runMachineFor (program : MachineProgram) (fuel : ℕ)
+    (memory : RealRAM.MachineMemory) : RealRAM.RunResult :=
+  RealRAM.runBinaryFor (· ^ ·) program fuel memory
+
+end RealRAM.RealPow
+
+namespace RealRAM.Exp
+
+/-- A uniform real-RAM program with primitive exponential. -/
+abbrev MachineProgram := RealRAM.Program (RealRAM.UnaryInstruction RealRAM.Exp)
+
+/-- Run a uniform exponential real-RAM program. -/
+noncomputable def runMachineFor (program : MachineProgram) (fuel : ℕ)
+    (memory : RealRAM.MachineMemory) : RealRAM.RunResult :=
+  RealRAM.runUnaryFor Real.exp program fuel memory
+
+end RealRAM.Exp
+
+namespace RealRAM.Log
+
+/-- A uniform real-RAM program with primitive logarithm. -/
+abbrev MachineProgram := RealRAM.Program (RealRAM.UnaryInstruction RealRAM.Log)
+
+/-- Run a uniform logarithmic real-RAM program. -/
+noncomputable def runMachineFor (program : MachineProgram) (fuel : ℕ)
+    (memory : RealRAM.MachineMemory) : RealRAM.RunResult :=
+  RealRAM.runUnaryFor Real.log program fuel memory
+
+end RealRAM.Log
+
+namespace RealRAM.Sin
+
+/-- A uniform real-RAM program with primitive sine. -/
+abbrev MachineProgram := RealRAM.Program (RealRAM.UnaryInstruction RealRAM.Sin)
+
+/-- Run a uniform sine real-RAM program. -/
+noncomputable def runMachineFor (program : MachineProgram) (fuel : ℕ)
+    (memory : RealRAM.MachineMemory) : RealRAM.RunResult :=
+  RealRAM.runUnaryFor Real.sin program fuel memory
+
+end RealRAM.Sin
+
+namespace RealRAM.Cos
+
+/-- A uniform real-RAM program with primitive cosine. -/
+abbrev MachineProgram := RealRAM.Program (RealRAM.UnaryInstruction RealRAM.Cos)
+
+/-- Run a uniform cosine real-RAM program. -/
+noncomputable def runMachineFor (program : MachineProgram) (fuel : ℕ)
+    (memory : RealRAM.MachineMemory) : RealRAM.RunResult :=
+  RealRAM.runUnaryFor Real.cos program fuel memory
+
+end RealRAM.Cos
+
+namespace RealRAM.Floor
+
+/-- A uniform real-RAM program with primitive floor. -/
+abbrev MachineProgram := RealRAM.Program (RealRAM.UnaryInstruction RealRAM.Floor)
+
+/-- Run a uniform floor real-RAM program. -/
+noncomputable def runMachineFor (program : MachineProgram) (fuel : ℕ)
+    (memory : RealRAM.MachineMemory) : RealRAM.RunResult :=
+  RealRAM.runUnaryFor (fun x => ((⌊x⌋ : ℤ) : ℝ)) program fuel memory
+
+end RealRAM.Floor
 
 /-- Core real RAM plus a primitive square root, but no other optional operation. -/
 abbrev SqrtRealRAM := ExtendedRealRAM RealRAM.Sqrt
