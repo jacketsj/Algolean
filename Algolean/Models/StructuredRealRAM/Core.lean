@@ -249,6 +249,344 @@ def Valid (program : Program) : Prop :=
   ∀ (pc : ℕ) (instruction : Instruction), program[pc]? = some instruction →
     ∀ target ∈ instruction.successors, target < program.length
 
+/--
+Canonical self-delimiting binary encoding of a natural: unary payload length, a delimiter, then
+the little-endian payload.  Zero is encoded by the delimiter alone.
+-/
+def encodeNat (value : ℕ) : List Bool :=
+  List.replicate (Nat.bits value).length false ++ true :: Nat.bits value
+
+/-- Canonical signed-integer encoding: sign followed by an encoded magnitude. -/
+def encodeInt (value : ℤ) : List Bool :=
+  (value < 0) :: encodeNat value.natAbs
+
+/-- Canonical rational encoding using Lean's unique normalized numerator and denominator. -/
+def encodeRat (value : ℚ) : List Bool :=
+  encodeInt value.num ++ encodeNat value.den
+
+/-- Prefix-tagged encoding of a real operand. -/
+def encodeRealOperand : RealOperand → List Bool
+  | .literal value => false :: encodeRat value
+  | .load addressRegister => true :: encodeNat addressRegister
+
+/-- Prefix-tagged encoding of a natural operand. -/
+def encodeNatOperand : NatOperand → List Bool
+  | .literal value => [false, false] ++ encodeNat value
+  | .reg register => [false, true] ++ encodeNat register
+  | .load addressRegister => [true, false] ++ encodeNat addressRegister
+
+/--
+Canonical prefix-tagged instruction encoding.  Every source literal, register, address-register,
+and numeric successor is materialized in the bit stream.
+-/
+def encodeInstruction : Instruction → List Bool
+  | .rset source destination next =>
+      [false, false, false, false] ++ encodeRealOperand source ++ encodeNat destination ++
+        encodeNat next
+  | .radd left right destination next =>
+      [false, false, false, true] ++ encodeRealOperand left ++ encodeRealOperand right ++
+        encodeNat destination ++ encodeNat next
+  | .rsub left right destination next =>
+      [false, false, true, false] ++ encodeRealOperand left ++ encodeRealOperand right ++
+        encodeNat destination ++ encodeNat next
+  | .rmul left right destination next =>
+      [false, false, true, true] ++ encodeRealOperand left ++ encodeRealOperand right ++
+        encodeNat destination ++ encodeNat next
+  | .rdiv left right destination next =>
+      [false, true, false, false] ++ encodeRealOperand left ++ encodeRealOperand right ++
+        encodeNat destination ++ encodeNat next
+  | .rneg source destination next =>
+      [false, true, false, true] ++ encodeRealOperand source ++ encodeNat destination ++
+        encodeNat next
+  | .nset source destination next =>
+      [false, true, true, false] ++ encodeNatOperand source ++ encodeNat destination ++
+        encodeNat next
+  | .nadd left right destination next =>
+      [false, true, true, true] ++ encodeNatOperand left ++ encodeNatOperand right ++
+        encodeNat destination ++ encodeNat next
+  | .nsub left right destination next =>
+      [true, false, false, false] ++ encodeNatOperand left ++ encodeNatOperand right ++
+        encodeNat destination ++ encodeNat next
+  | .nload address destination next =>
+      [true, false, false, true] ++ encodeNat address ++ encodeNat destination ++ encodeNat next
+  | .nstore source address next =>
+      [true, false, true, false] ++ encodeNatOperand source ++ encodeNat address ++ encodeNat next
+  | .rcompare left right less equal greater =>
+      [true, false, true, true] ++ encodeRealOperand left ++ encodeRealOperand right ++
+        encodeNat less ++ encodeNat equal ++ encodeNat greater
+  | .ncompare left right less equal greater =>
+      [true, true, false, false] ++ encodeNatOperand left ++ encodeNatOperand right ++
+        encodeNat less ++ encodeNat equal ++ encodeNat greater
+  | .jump target => [true, true, false, true] ++ encodeNat target
+  | .halt result => [true, true, true, false] ++ encodeRealOperand result
+
+/-- Concatenate the self-delimiting encodings of a list of instructions. -/
+def encodeInstructions : List Instruction → List Bool
+  | [] => []
+  | instruction :: instructions =>
+      encodeInstruction instruction ++ encodeInstructions instructions
+
+/-- Canonical binary serialization with a self-delimiting instruction-count header. -/
+def encode (program : Program) : List Bool :=
+  encodeNat program.length ++ encodeInstructions program
+
+/-- Reconstruct a natural from a little-endian bit payload. -/
+def bitsToNat : List Bool → ℕ
+  | [] => 0
+  | bit :: bits => Nat.bit bit (bitsToNat bits)
+
+@[simp]
+theorem bitsToNat_bits (value : ℕ) : bitsToNat (Nat.bits value) = value := by
+  induction value using Nat.binaryRec' with
+  | zero => rfl
+  | bit bit value nonzero induction =>
+      rw [Nat.bits_append_bit value bit nonzero]
+      simp [bitsToNat, induction]
+
+/-- Parse a unary length prefix ending in `true`. -/
+def decodeUnaryLength : List Bool → Option (ℕ × List Bool)
+  | [] => none
+  | true :: bits => some (0, bits)
+  | false :: bits =>
+      match decodeUnaryLength bits with
+      | none => none
+      | some (length, rest) => some (length + 1, rest)
+
+@[simp]
+theorem decodeUnaryLength_replicate (length : ℕ) (rest : List Bool) :
+    decodeUnaryLength (List.replicate length false ++ true :: rest) =
+      some (length, rest) := by
+  induction length with
+  | zero => rfl
+  | succ length induction => simp [List.replicate_succ, decodeUnaryLength, induction]
+
+/-- Parse one self-delimiting natural and return the unused suffix. -/
+def decodeNat (bits : List Bool) : Option (ℕ × List Bool) := do
+  let (length, payload) ← decodeUnaryLength bits
+  pure (bitsToNat (payload.take length), payload.drop length)
+
+@[simp]
+theorem decodeNat_encode (value : ℕ) (rest : List Bool) :
+    decodeNat (encodeNat value ++ rest) = some (value, rest) := by
+  simp [decodeNat, encodeNat, List.append_assoc]
+
+/-- Parse one signed integer and return the unused suffix. -/
+def decodeInt : List Bool → Option (ℤ × List Bool)
+  | [] => none
+  | sign :: bits => do
+      let (magnitude, rest) ← decodeNat bits
+      pure (if sign then -(Int.ofNat magnitude) else Int.ofNat magnitude, rest)
+
+@[simp]
+theorem decodeInt_encode (value : ℤ) (rest : List Bool) :
+    decodeInt (encodeInt value ++ rest) = some (value, rest) := by
+  cases value with
+  | ofNat value => simp [encodeInt, decodeInt]
+  | negSucc value =>
+      have negative : Int.negSucc value < 0 := by omega
+      simp only [encodeInt, negative, decide_true, Int.natAbs_negSucc,
+        List.cons_append, decodeInt]
+      rw [decodeNat_encode]
+      simp [Int.negSucc_eq]
+
+/-- Parse one normalized rational and return the unused suffix. -/
+def decodeRat (bits : List Bool) : Option (ℚ × List Bool) := do
+  let (numerator, bits) ← decodeInt bits
+  let (denominator, rest) ← decodeNat bits
+  if denominatorZero : denominator = 0 then none
+  else pure (Rat.normalize numerator denominator denominatorZero, rest)
+
+@[simp]
+theorem decodeRat_encode (value : ℚ) (rest : List Bool) :
+    decodeRat (encodeRat value ++ rest) = some (value, rest) := by
+  simp only [encodeRat, List.append_assoc, decodeRat, decodeInt_encode, Option.bind_eq_bind,
+    Option.bind_some, decodeNat_encode]
+  simp [value.den_ne_zero, Rat.normalize_eq_mkRat, value.mkRat_num_den']
+
+/-- Parse a real operand. -/
+def decodeRealOperand : List Bool → Option (RealOperand × List Bool)
+  | false :: bits => do
+      let (value, rest) ← decodeRat bits
+      pure (.literal value, rest)
+  | true :: bits => do
+      let (register, rest) ← decodeNat bits
+      pure (.load register, rest)
+  | [] => none
+
+@[simp]
+theorem decodeRealOperand_encode (operand : RealOperand) (rest : List Bool) :
+    decodeRealOperand (encodeRealOperand operand ++ rest) = some (operand, rest) := by
+  cases operand <;> simp [encodeRealOperand, decodeRealOperand]
+
+/-- Parse a natural operand. -/
+def decodeNatOperand : List Bool → Option (NatOperand × List Bool)
+  | false :: false :: bits => do
+      let (value, rest) ← decodeNat bits
+      pure (.literal value, rest)
+  | false :: true :: bits => do
+      let (register, rest) ← decodeNat bits
+      pure (.reg register, rest)
+  | true :: false :: bits => do
+      let (register, rest) ← decodeNat bits
+      pure (.load register, rest)
+  | _ => none
+
+@[simp]
+theorem decodeNatOperand_encode (operand : NatOperand) (rest : List Bool) :
+    decodeNatOperand (encodeNatOperand operand ++ rest) = some (operand, rest) := by
+  cases operand <;> simp [encodeNatOperand, decodeNatOperand]
+
+/-- Parse one prefix-tagged instruction. -/
+def decodeInstruction : List Bool → Option (Instruction × List Bool)
+  | false :: false :: false :: false :: bits => do
+      let (source, bits) ← decodeRealOperand bits
+      let (destination, bits) ← decodeNat bits
+      let (next, rest) ← decodeNat bits
+      pure (.rset source destination next, rest)
+  | false :: false :: false :: true :: bits => do
+      let (left, bits) ← decodeRealOperand bits
+      let (right, bits) ← decodeRealOperand bits
+      let (destination, bits) ← decodeNat bits
+      let (next, rest) ← decodeNat bits
+      pure (.radd left right destination next, rest)
+  | false :: false :: true :: false :: bits => do
+      let (left, bits) ← decodeRealOperand bits
+      let (right, bits) ← decodeRealOperand bits
+      let (destination, bits) ← decodeNat bits
+      let (next, rest) ← decodeNat bits
+      pure (.rsub left right destination next, rest)
+  | false :: false :: true :: true :: bits => do
+      let (left, bits) ← decodeRealOperand bits
+      let (right, bits) ← decodeRealOperand bits
+      let (destination, bits) ← decodeNat bits
+      let (next, rest) ← decodeNat bits
+      pure (.rmul left right destination next, rest)
+  | false :: true :: false :: false :: bits => do
+      let (left, bits) ← decodeRealOperand bits
+      let (right, bits) ← decodeRealOperand bits
+      let (destination, bits) ← decodeNat bits
+      let (next, rest) ← decodeNat bits
+      pure (.rdiv left right destination next, rest)
+  | false :: true :: false :: true :: bits => do
+      let (source, bits) ← decodeRealOperand bits
+      let (destination, bits) ← decodeNat bits
+      let (next, rest) ← decodeNat bits
+      pure (.rneg source destination next, rest)
+  | false :: true :: true :: false :: bits => do
+      let (source, bits) ← decodeNatOperand bits
+      let (destination, bits) ← decodeNat bits
+      let (next, rest) ← decodeNat bits
+      pure (.nset source destination next, rest)
+  | false :: true :: true :: true :: bits => do
+      let (left, bits) ← decodeNatOperand bits
+      let (right, bits) ← decodeNatOperand bits
+      let (destination, bits) ← decodeNat bits
+      let (next, rest) ← decodeNat bits
+      pure (.nadd left right destination next, rest)
+  | true :: false :: false :: false :: bits => do
+      let (left, bits) ← decodeNatOperand bits
+      let (right, bits) ← decodeNatOperand bits
+      let (destination, bits) ← decodeNat bits
+      let (next, rest) ← decodeNat bits
+      pure (.nsub left right destination next, rest)
+  | true :: false :: false :: true :: bits => do
+      let (address, bits) ← decodeNat bits
+      let (destination, bits) ← decodeNat bits
+      let (next, rest) ← decodeNat bits
+      pure (.nload address destination next, rest)
+  | true :: false :: true :: false :: bits => do
+      let (source, bits) ← decodeNatOperand bits
+      let (address, bits) ← decodeNat bits
+      let (next, rest) ← decodeNat bits
+      pure (.nstore source address next, rest)
+  | true :: false :: true :: true :: bits => do
+      let (left, bits) ← decodeRealOperand bits
+      let (right, bits) ← decodeRealOperand bits
+      let (less, bits) ← decodeNat bits
+      let (equal, bits) ← decodeNat bits
+      let (greater, rest) ← decodeNat bits
+      pure (.rcompare left right less equal greater, rest)
+  | true :: true :: false :: false :: bits => do
+      let (left, bits) ← decodeNatOperand bits
+      let (right, bits) ← decodeNatOperand bits
+      let (less, bits) ← decodeNat bits
+      let (equal, bits) ← decodeNat bits
+      let (greater, rest) ← decodeNat bits
+      pure (.ncompare left right less equal greater, rest)
+  | true :: true :: false :: true :: bits => do
+      let (target, rest) ← decodeNat bits
+      pure (.jump target, rest)
+  | true :: true :: true :: false :: bits => do
+      let (result, rest) ← decodeRealOperand bits
+      pure (.halt result, rest)
+  | _ => none
+
+@[simp]
+theorem decodeInstruction_encode (instruction : Instruction) (rest : List Bool) :
+    decodeInstruction (encodeInstruction instruction ++ rest) = some (instruction, rest) := by
+  cases instruction <;> simp [encodeInstruction, decodeInstruction, List.append_assoc]
+
+/-- Parse exactly the requested number of instructions. -/
+def decodeInstructions : ℕ → List Bool → Option (List Instruction × List Bool)
+  | 0, bits => some ([], bits)
+  | count + 1, bits => do
+      let (instruction, bits) ← decodeInstruction bits
+      let (instructions, rest) ← decodeInstructions count bits
+      pure (instruction :: instructions, rest)
+
+@[simp]
+theorem decodeInstructions_encode (instructions : List Instruction) (rest : List Bool) :
+    decodeInstructions instructions.length (encodeInstructions instructions ++ rest) =
+      some (instructions, rest) := by
+  induction instructions with
+  | nil => rfl
+  | cons instruction instructions induction =>
+      simp [encodeInstructions, decodeInstructions, List.append_assoc, induction]
+
+@[simp]
+theorem decodeInstructions_encode_nil (instructions : List Instruction) :
+    decodeInstructions instructions.length (encodeInstructions instructions) =
+      some (instructions, []) := by
+  simpa using decodeInstructions_encode instructions []
+
+/-- Decode a complete canonical program serialization, rejecting an unused suffix. -/
+def decode (bits : List Bool) : Option Program := do
+  let (count, bits) ← decodeNat bits
+  let (program, rest) ← decodeInstructions count bits
+  if rest.isEmpty then some program else none
+
+/-- Canonical target-program serialization has a kernel-checked round-trip theorem. -/
+@[simp]
+theorem decode_encode (program : Program) : decode (encode program) = some program := by
+  simp [decode, encode]
+
+/-- Full source-description size is definitionally the canonical serialization length. -/
+def descriptionSize (program : Program) : ℕ := (encode program).length
+
+/-- Component size of a natural in the same canonical serialization. -/
+def natDescriptionSize (value : ℕ) : ℕ := (encodeNat value).length
+
+/-- Component size of a signed integer in the same canonical serialization. -/
+def intDescriptionSize (value : ℤ) : ℕ := (encodeInt value).length
+
+/-- Component size of a rational in the same canonical serialization. -/
+def ratDescriptionSize (value : ℚ) : ℕ := (encodeRat value).length
+
+/-- Component size of a real operand in the same canonical serialization. -/
+def realOperandDescriptionSize (operand : RealOperand) : ℕ :=
+  (encodeRealOperand operand).length
+
+/-- Component size of a natural operand in the same canonical serialization. -/
+def natOperandDescriptionSize (operand : NatOperand) : ℕ :=
+  (encodeNatOperand operand).length
+
+/-- Component size of an instruction in the same canonical serialization. -/
+def instructionDescriptionSize (instruction : Instruction) : ℕ :=
+  (encodeInstruction instruction).length
+
+/-- Instruction count retained as a separate, explicitly weaker code metric. -/
+def instructionCount (program : Program) : ℕ := program.length
+
 end Program
 
 /-- Select one of three numeric successors. -/
@@ -333,6 +671,9 @@ structure Profile where
   name : String
 
 /-- Core exact-real arithmetic, two memory banks, and no extensions or oracles. -/
-def coreProfile : Profile := ⟨"Algolean.StructuredRealRAM.Core"⟩
+def coreProfile : Profile :=
+  ⟨"structured exact-real RAM; exact comparisons; totalized division; unbounded Nat bank; " ++
+    "truncating Nat subtraction; unit-cost Nat arithmetic and random access; input size is " ++
+    "represented cell count; rational real literals only; zero unused memory; halt counted"⟩
 
 end Algolean.Algorithms.StructuredRealRAM

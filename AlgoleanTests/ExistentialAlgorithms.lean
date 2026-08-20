@@ -7,6 +7,8 @@ Authors: Algolean contributors
 module
 
 public import Algolean.Audit.Algorithm
+public meta import Algolean.Audit.Algorithm
+public import Algolean.Complexity.RandomizedMachineProblem
 
 /-! # Acceptance examples for auditable existential algorithm statements -/
 
@@ -18,13 +20,42 @@ open Algolean Algorithms
 open StructuredRealRAM
 
 /--
-error: Unknown constant
+error: Unknown constant `Algolean.Algorithms.StructuredRealRAM.Layout.mk`
 -/
 #guard_msgs (error, substring := true) in
 #check Layout.mk
 
+/--
+error: Unknown constant
+-/
+#guard_msgs (error, substring := true) in
+#check Layout.custom
+
+/--
+error: Unknown constant
+-/
+#guard_msgs (error, substring := true) in
+#check Layout.viaEquiv
+
+#print Layout
+
 noncomputable def pairArrayLayout : Layout (Array (ℕ × ℝ)) :=
   .array (.prod .nat .real)
+
+example : Layout Bool := .bool
+
+example (value : ℤ) : Layout.int.decode (Layout.int.encode value) = some value :=
+  Layout.int.decode_encode value
+
+example (value : ℚ) : Layout.rat.decode (Layout.rat.encode value) = some value :=
+  Layout.rat.decode_encode value
+
+example (value : Fin 7) : (Layout.fin 7).decode ((Layout.fin 7).encode value) = some value :=
+  (Layout.fin 7).decode_encode value
+
+example (value : BitVec 16) :
+    (Layout.bitVec 16).decode ((Layout.bitVec 16).encode value) = some value :=
+  (Layout.bitVec 16).decode_encode value
 
 example (values : Array (ℕ × ℝ)) :
     pairArrayLayout.decode (pairArrayLayout.encode values) = some values :=
@@ -57,9 +88,13 @@ def haltProgram : StructuredRealRAM.Program := [
 def haltCost : StructuredRealRAM.Cost :=
   StructuredRealRAM.Cost.ofFields 1 0 0 0 0 0 0 0 0
 
-theorem haltProgram_hasAlgorithm :
-    identityProblem.HasFixedMachineAlgorithm (fun _ => haltCost) := by
-  refine ⟨haltProgram, ?_, ?_⟩
+def haltCertificate :
+    MachineProblem.FixedAlgorithmCertificate identityProblem (fun _ => haltCost) := by
+  refine {
+    program := haltProgram
+    valid := ?_
+    solves := ?_
+  }
   · intro pc instruction fetch target successor
     cases pc with
     | zero =>
@@ -78,6 +113,20 @@ theorem haltProgram_hasAlgorithm :
     simp [StructuredRealRAM.step, StructuredRealRAM.execute, haltProgram, haltCost,
       StructuredRealRAM.Instruction.cost, StructuredRealRAM.RealOperand.eval,
       StructuredRealRAM.RealOperand.reads, MachineProblem.initialMemory, identityProblem]
+
+theorem haltProgram_hasAlgorithm :
+    identityProblem.HasFixedMachineAlgorithm (fun _ => haltCost) :=
+  ⟨haltCertificate⟩
+
+def haltPublication :
+    Algorithms.Audit.FixedAlgorithmPublication identityProblem (fun _ => haltCost) where
+  certificate := haltCertificate
+  certificateName := `haltPublication
+  problemName := `identityProblem
+  boundName := `haltCost
+  correctnessTheorem := `haltProgram_hasAlgorithm
+
+#algorithm_audit haltPublication
 
 end FixedStructured
 
@@ -118,7 +167,11 @@ def integerFirstProblem : IntegerRAM.Problem where
 
 theorem integerReadFirst_hasAlgorithm :
     integerFirstProblem.HasFixedMachineAlgorithm (fun _ => 1) := by
-  refine ⟨integerReadFirst, ?_, ?_⟩
+  refine ⟨{
+    program := integerReadFirst
+    valid := ?_
+    solves := ?_
+  }⟩
   · intro pc instruction fetch target successor
     cases pc with
     | zero =>
@@ -156,7 +209,11 @@ def wordFirstProblem : WordRAM.Problem 8 where
 
 theorem wordReadFirst_hasAlgorithm :
     wordFirstProblem.HasFixedMachineAlgorithm (fun _ => 1) := by
-  refine ⟨wordReadFirst, ?_, ?_⟩
+  refine ⟨{
+    program := wordReadFirst
+    valid := ?_
+    solves := ?_
+  }⟩
   · intro pc instruction fetch target successor
     cases pc with
     | zero =>
@@ -182,5 +239,69 @@ example :
   decide
 
 end NativeRAMs
+
+namespace AdversarialChecks
+
+/-- The legacy relative interface can intentionally model input-dependent advice. -/
+noncomputable def adviceTapeLaw : InputDependentTapeProblem where
+  Input := ℕ
+  Output := ℕ
+  Tape := ℕ
+  inputLayout := .nat
+  tapeLayout := .nat
+  outputLayout := .nat
+  outputRegion := ⟨10, 10⟩
+  tapeDistribution input := PMF.pure input
+  pre _ := True
+  post input output := output = input
+
+/--
+error: Unknown identifier `RandomizedMachineProblem`
+-/
+#guard_msgs (error, substring := true) in
+#check RandomizedMachineProblem
+
+#check MachineProblem.HasUniformlyGeneratedFamily
+#check MachineProblem.HasFamilyRelativeToGeneratorSpecification
+#check BitRandomizedMachineProblem.HasMonteCarloAlgorithm
+#print BitRandomizedMachineProblem
+
+/-- A fixed two-instruction family can nevertheless carry a growing source literal. -/
+def literalAdviceProgram (advice : ℕ) : StructuredRealRAM.Program := [
+  .nset (.literal advice) 0 1,
+  .halt (.literal 0)
+]
+
+example (advice : ℕ) : (literalAdviceProgram advice).length = 2 := rfl
+
+example :
+    StructuredRealRAM.Program.descriptionSize (literalAdviceProgram (2 ^ 20)) > 2 := by
+  decide
+
+example : StructuredRealRAM.Program.decode
+    (StructuredRealRAM.Program.encode (literalAdviceProgram (2 ^ 20))) =
+      some (literalAdviceProgram (2 ^ 20)) :=
+  StructuredRealRAM.Program.decode_encode _
+
+example : IntegerRAM.descriptionSize NativeRAMs.integerReadFirst > 1 := by decide
+example : WordRAM.descriptionSize NativeRAMs.wordReadFirst > 1 := by decide
+
+def integerLiteralProgram (advice : ℤ) : IntegerRAM.Program := [
+  .halt (.immediate advice)
+]
+
+example (advice : ℤ) : (integerLiteralProgram advice).length = 1 := rfl
+
+example : IntegerRAM.descriptionSize (integerLiteralProgram (2 ^ 20)) >
+    IntegerRAM.descriptionSize (integerLiteralProgram 0) := by decide
+
+def zeroWordProgram (width : ℕ) : WordRAM.Program width := [
+  .halt (.immediate 0)
+]
+
+example : WordRAM.descriptionSize (zeroWordProgram 64) >
+    WordRAM.descriptionSize (zeroWordProgram 8) := by decide
+
+end AdversarialChecks
 
 end AlgoleanTests.ExistentialAlgorithms

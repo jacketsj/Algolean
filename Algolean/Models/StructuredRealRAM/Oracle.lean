@@ -13,8 +13,8 @@ public import Algolean.Models.StructuredRealRAM.Layout
 
 This module defines the typed, layout-aware contract needed before an oracle instruction can be
 added to a named machine profile.  It intentionally does not represent an oracle as an arbitrary
-memory transformer.  Query and answer transfer costs are explicit, and non-vacuity is a separate
-property.
+memory transformer.  Query cost is named, answer-transfer cells are derived from the closed layout,
+and non-vacuity is a separate property.
 -/
 
 @[expose] public section
@@ -22,12 +22,11 @@ property.
 namespace Algolean.Algorithms.StructuredRealRAM
 
 /-- A closed typed query/answer interface with canonical memory layouts. -/
-@[nolint checkUnivs]
 structure OracleInterface (Cost : Type w) where
   /-- Query carrier. -/
-  Query : Type u
+  Query : Type
   /-- Query-dependent answer carrier. -/
-  Answer : Query → Type v
+  Answer : Query → Type
   /-- Closed canonical query layout. -/
   queryLayout : Layout Query
   /-- Closed canonical answer layout for each query. -/
@@ -36,8 +35,6 @@ structure OracleInterface (Cost : Type w) where
   ValidAnswer : (query : Query) → Answer query → Prop
   /-- Cost of issuing a query. -/
   queryCost : (query : Query) → Cost
-  /-- Cost of transferring the canonical answer into memory. -/
-  answerWriteCost : (query : Query) → Answer query → Cost
 
 /-- One fixed responder satisfying the interface's advertised answer relation. -/
 structure AdmissibleOracle (interface : OracleInterface Cost) where
@@ -60,6 +57,14 @@ noncomputable def queryMemory (interface : OracleInterface Cost)
 noncomputable def AnswerRep (interface : OracleInterface Cost) (query : interface.Query)
     (region : Region) (answer : interface.Answer query) (memory : Memory) : Prop :=
   (interface.answerLayout query).RepAt region answer memory
+
+/--
+Canonical answer-transfer cell count, derived from the closed answer layout rather than supplied
+as an arbitrary possibly-zero cost function.
+-/
+noncomputable def answerTransferCells (interface : OracleInterface Cost)
+    (query : interface.Query) (answer : interface.Answer query) : ℕ :=
+  ((interface.answerLayout query).footprint answer).total
 
 /-- Canonical oracle answers have a functional memory interpretation. -/
 theorem AnswerRep.functional (interface : OracleInterface Cost) (query : interface.Query)

@@ -17,7 +17,9 @@ the sealed core structured-real-RAM profile.  The program is selected before eve
 memory is canonical, output is a `Layout.RepAt` relation, and cost belongs to the same halting
 trace as the result.
 
-Program families have deliberately different names and carry a code-size obligation.
+Program families have deliberately different names and carry both instruction-count and full
+description-size obligations.  Caller-defined generator semantics are retained only under an
+explicitly relative name; they are not presented as ordinary uniform generation.
 -/
 
 @[expose] public section
@@ -27,12 +29,11 @@ namespace Algolean.Algorithms
 open StructuredRealRAM
 
 /-- A deterministic problem over canonical structured inputs and outputs. -/
-@[nolint checkUnivs]
 structure MachineProblem where
   /-- Mathematical input carrier. -/
-  Input : Type u
+  Input : Type
   /-- Computational output carrier; proof obligations belong in `post`. -/
-  Output : Type v
+  Output : Type
   /-- Closed canonical input layout. -/
   inputLayout : Layout Input
   /-- Closed canonical output layout. -/
@@ -99,10 +100,19 @@ Preferred deterministic existential algorithm claim: one valid finite program is
 inputs.  The core structured-real-RAM profile, layout semantics, and costed trace are not chosen by
 the witness.
 -/
+structure FixedAlgorithmCertificate (problem : MachineProblem)
+    (bound : ℕ → StructuredRealRAM.Cost) where
+  /-- The concrete finite first-order witness. -/
+  program : StructuredRealRAM.Program
+  /-- All numeric successors stay within that program. -/
+  valid : program.Valid
+  /-- Correctness and resource use for every valid input. -/
+  solves : SolvesWithin problem program bound
+
+/-- Existence of a typed fixed-program certificate. -/
 noncomputable def HasFixedMachineAlgorithm (problem : MachineProblem)
     (bound : ℕ → StructuredRealRAM.Cost) : Prop :=
-  ∃ program : StructuredRealRAM.Program,
-    program.Valid ∧ SolvesWithin problem program bound
+  Nonempty (FixedAlgorithmCertificate problem bound)
 
 /-- Concise compatibility name for the preferred fixed-program predicate. -/
 abbrev HasAlgorithm := HasFixedMachineAlgorithm
@@ -115,42 +125,165 @@ A first-order CFG source whose assembled target is valid and solves the problem.
 code size is available from `CFG.compile_length`; no continuation-valued source program appears in
 this claim.
 -/
+structure CompiledAlgorithmCertificate (problem : MachineProblem)
+    (bound : ℕ → StructuredRealRAM.Cost) where
+  /-- Concrete first-order labeled source. -/
+  source : StructuredRealRAM.CFG.Program
+  /-- Static source well-formedness. -/
+  wellFormed : source.WellFormed
+  /-- Validity of the concrete assembled target. -/
+  targetValid : (StructuredRealRAM.CFG.compile source).Valid
+  /-- Correctness and cost of the assembled target. -/
+  solves : SolvesWithin problem (StructuredRealRAM.CFG.compile source) bound
+
+/-- Existence of a typed compiled-algorithm certificate. -/
 noncomputable def HasCompiledAlgorithm (problem : MachineProblem)
     (bound : ℕ → StructuredRealRAM.Cost) : Prop :=
-  ∃ source : StructuredRealRAM.CFG.Program,
-    source.WellFormed ∧
-      (StructuredRealRAM.CFG.compile source).Valid ∧
-      SolvesWithin problem (StructuredRealRAM.CFG.compile source) bound
+  Nonempty (CompiledAlgorithmCertificate problem bound)
 
-/-- A visibly nonuniform family with an explicit emitted-code-size obligation. -/
+/-- A visibly nonuniform family with separate instruction and full-description size obligations. -/
+structure NonuniformFamilyCertificate (problem : MachineProblem)
+    (timeBound : ℕ → StructuredRealRAM.Cost)
+    (instructionBound descriptionBound : ℕ → ℕ) where
+  /-- One target program for each represented input size. -/
+  code : ℕ → StructuredRealRAM.Program
+  /-- Every member is closed under its jump targets. -/
+  valid : ∀ size, (code size).Valid
+  /-- Weaker instruction-count metadata, retained separately. -/
+  instructionSize : ∀ size,
+    StructuredRealRAM.Program.instructionCount (code size) ≤ instructionBound size
+  /-- Full source-description bound, including literals, indices, and targets. -/
+  descriptionSize : ∀ size,
+    StructuredRealRAM.Program.descriptionSize (code size) ≤ descriptionBound size
+  /-- The same member handles every valid input of its represented size. -/
+  solves : ∀ input, problem.pre input →
+    let size := problem.inputSize input
+    SolvesInputWithin problem (code size) input (timeBound size)
+
+/-- Existence of an explicitly nonuniform typed family certificate. -/
 noncomputable def HasNonuniformFamily (problem : MachineProblem)
-    (timeBound : ℕ → StructuredRealRAM.Cost) (codeBound : ℕ → ℕ) : Prop :=
-  ∃ code : ℕ → StructuredRealRAM.Program,
-    (∀ size, (code size).Valid) ∧
-    (∀ size, (code size).length ≤ codeBound size) ∧
-    (∀ input, problem.pre input →
-      let size := problem.inputSize input
-      SolvesInputWithin problem (code size) input (timeBound size))
+    (timeBound : ℕ → StructuredRealRAM.Cost)
+    (instructionBound descriptionBound : ℕ → ℕ) : Prop :=
+  Nonempty (NonuniformFamilyCertificate problem timeBound instructionBound descriptionBound)
+
+/-- Fixed output region for the sealed program generator, disjoint from its canonical Nat input. -/
+def generatorOutputRegion : Region := ⟨0, 4⟩
 
 /--
-A generated family certificate keeps generation, code size, and execution as separate obligations.
-`Generates` is fixed by the caller's named generator model before the witness is chosen.
+The generated target program is represented by its canonical binary serialization in ordinary
+structured memory.  No host-language `Program` value is returned by one generator step.
+-/
+noncomputable def GeneratedProgramRep (program : StructuredRealRAM.Program)
+    (memory : Memory) : Prop :=
+  (Layout.array Layout.bool).RepAt generatorOutputRegion
+    (StructuredRealRAM.Program.encode program).toArray memory
+
+/-- The generated binary representation denotes at most one target program. -/
+theorem GeneratedProgramRep.functional {left right : StructuredRealRAM.Program} {memory : Memory}
+    (leftRep : GeneratedProgramRep left memory)
+    (rightRep : GeneratedProgramRep right memory) : left = right := by
+  have arrays : (StructuredRealRAM.Program.encode left).toArray =
+      (StructuredRealRAM.Program.encode right).toArray :=
+    (Layout.array Layout.bool).rep_functional generatorOutputRegion leftRep rightRep
+  have encodings : StructuredRealRAM.Program.encode left =
+      StructuredRealRAM.Program.encode right := by
+    simpa using congrArg Array.toList arrays
+  have decoded := congrArg StructuredRealRAM.Program.decode encodings
+  simpa using decoded
+
+/-- Canonical input to the sealed generator machine. -/
+noncomputable def generatorInitialMemory (size : ℕ) : Memory := Layout.nat.init size
+
+/--
+Typed certificate for ordinary uniform generation by one fixed sealed structured-real-RAM
+program.  This is specifically a unit-cost unbounded-Nat generator model, not word-RAM or bit
+complexity.  The generated binary target serialization is tied to final memory, its representation
+is functional, and materializing every represented cell is charged by the same trace.
+-/
+structure UniformlyGeneratedFamilyCertificate
+    (problem : MachineProblem)
+    (generationBound : ℕ → StructuredRealRAM.Cost)
+    (instructionBound descriptionBound : ℕ → ℕ)
+    (timeBound : ℕ → StructuredRealRAM.Cost) where
+  /-- One fixed first-order generator program. -/
+  generator : StructuredRealRAM.Program
+  generatorValid : generator.Valid
+  /-- Same-trace generation, output representation/materialization, and target obligations. -/
+  generated : ∀ size,
+    ∃ (code : StructuredRealRAM.Program)
+      (run : SuccessfulRun generator (generatorInitialMemory size)),
+      GeneratedProgramRep code run.final ∧
+      run.cost ≤ generationBound size ∧
+      ((Layout.array Layout.bool).footprint
+        (StructuredRealRAM.Program.encode code).toArray).total ≤ run.cost.natWrites ∧
+      code.Valid ∧
+      StructuredRealRAM.Program.instructionCount code ≤ instructionBound size ∧
+      StructuredRealRAM.Program.descriptionSize code ≤ descriptionBound size ∧
+      ∀ input, problem.pre input → problem.inputSize input = size →
+        SolvesInputWithin problem code input (timeBound size)
+
+/--
+Preferred absolute generated-family claim.  Generator syntax, semantics, and cost are the sealed
+structured exact-real RAM definitions; callers cannot replace them with `Nat → Program` and a
+zero-cost relation.
 -/
 noncomputable def HasUniformlyGeneratedFamily
     (problem : MachineProblem)
-    (GeneratorProgram : Type w)
-    (Generates : GeneratorProgram → ℕ → StructuredRealRAM.Program → Prop)
-    (GenerationCost : GeneratorProgram → ℕ → ℕ)
-    (generationBound codeBound : ℕ → ℕ)
+    (generationBound : ℕ → StructuredRealRAM.Cost)
+    (instructionBound descriptionBound : ℕ → ℕ)
     (timeBound : ℕ → StructuredRealRAM.Cost) : Prop :=
-  ∃ (generator : GeneratorProgram) (code : ℕ → StructuredRealRAM.Program),
-    (∀ size, Generates generator size (code size)) ∧
-    (∀ size, GenerationCost generator size ≤ generationBound size) ∧
-    (∀ size, (code size).Valid) ∧
-    (∀ size, (code size).length ≤ codeBound size) ∧
-    (∀ input, problem.pre input →
-      let size := problem.inputSize input
-      SolvesInputWithin problem (code size) input (timeBound size))
+  Nonempty (UniformlyGeneratedFamilyCertificate problem generationBound instructionBound
+    descriptionBound timeBound)
+
+/--
+A caller-defined generator specification.  This abstraction is useful for relative results, but it
+does not establish ordinary uniformity: its syntax, semantics, and cost remain assumptions.
+-/
+structure RelativeGeneratorSpecification where
+  /-- Caller-selected generator syntax. -/
+  GeneratorProgram : Type w
+  /-- Caller-selected generation relation. -/
+  Generates : GeneratorProgram → ℕ → StructuredRealRAM.Program → Prop
+  /-- Caller-selected generation cost. -/
+  GenerationCost : GeneratorProgram → ℕ → ℕ
+
+/-- Typed certificate for a family relative to explicitly supplied generator semantics. -/
+structure RelativeGeneratedFamilyCertificate
+    (problem : MachineProblem) (specification : RelativeGeneratorSpecification)
+    (generationBound instructionBound descriptionBound : ℕ → ℕ)
+    (timeBound : ℕ → StructuredRealRAM.Cost) where
+  /-- Generator witness relative to the supplied specification. -/
+  generator : specification.GeneratorProgram
+  /-- Size-indexed target family relative to the supplied relation. -/
+  code : ℕ → StructuredRealRAM.Program
+  /-- The supplied relation accepts every family member. -/
+  generated : ∀ size, specification.Generates generator size (code size)
+  /-- The supplied cost is within the advertised generation bound. -/
+  generationCost : ∀ size,
+    specification.GenerationCost generator size ≤ generationBound size
+  /-- Every generated target is valid. -/
+  valid : ∀ size, (code size).Valid
+  /-- Instruction-count bound. -/
+  instructionSize : ∀ size,
+    StructuredRealRAM.Program.instructionCount (code size) ≤ instructionBound size
+  /-- Full serialized-description bound. -/
+  descriptionSize : ∀ size,
+    StructuredRealRAM.Program.descriptionSize (code size) ≤ descriptionBound size
+  /-- Relative family correctness and execution cost. -/
+  solves : ∀ input, problem.pre input →
+    let size := problem.inputSize input
+    SolvesInputWithin problem (code size) input (timeBound size)
+
+/--
+Existence relative to caller-supplied generator syntax, semantics, and cost.  The deliberately long
+name prevents this proposition from being mistaken for an absolute uniformity statement.
+-/
+noncomputable def HasFamilyRelativeToGeneratorSpecification
+    (problem : MachineProblem) (specification : RelativeGeneratorSpecification)
+    (generationBound instructionBound descriptionBound : ℕ → ℕ)
+    (timeBound : ℕ → StructuredRealRAM.Cost) : Prop :=
+  Nonempty (RelativeGeneratedFamilyCertificate problem specification generationBound
+    instructionBound descriptionBound timeBound)
 
 end MachineProblem
 

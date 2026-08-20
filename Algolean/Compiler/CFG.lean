@@ -174,6 +174,13 @@ def compileBlocks (allBlocks : List BasicBlock) : ℕ → List BasicBlock → Li
 def compile (program : Program) : StructuredRealRAM.Program :=
   compileBlocks program.blocks 0 program.blocks
 
+/--
+Full target-description size after labels have become numeric jump targets.  This deliberately
+charges the binary sizes of generated program counters and all instruction payloads.
+-/
+def Program.compiledDescriptionSize (program : Program) : ℕ :=
+  StructuredRealRAM.Program.descriptionSize (compile program)
+
 @[simp]
 theorem compileBody_length (pc : ℕ) (body : List Operation) :
     (compileBody pc body).length = body.length := by
@@ -194,6 +201,11 @@ theorem compileBlocks_length (allBlocks blocks : List BasicBlock) (pc : ℕ) :
 theorem compile_length (program : Program) :
     (compile program).length = program.codeSize := by
   exact compileBlocks_length program.blocks program.blocks 0
+
+/-- Exact full-description refinement, including generated numeric jump targets. -/
+theorem compile_descriptionSize (program : Program) :
+    StructuredRealRAM.Program.descriptionSize (compile program) =
+      program.compiledDescriptionSize := rfl
 
 /-- A branch block contributes its body once plus one terminator, independent of arm count. -/
 theorem branch_block_codeSize (label : Label) (body : List Operation)

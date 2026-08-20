@@ -107,6 +107,80 @@ def Valid (program : Program Literal Address Extra) : Prop :=
     program[pc]? = some instruction →
       ∀ target ∈ instruction.successors, target < program.length
 
+/-- Full instruction count, kept separate from serialized description size. -/
+def instructionCount (program : Program Literal Address Extra) : ℕ := program.length
+
+end Program
+
+/-- Canonical self-delimiting binary encoding used for RAM syntax naturals. -/
+def encodeNat (value : ℕ) : List Bool :=
+  List.replicate (Nat.bits value).length false ++ true :: Nat.bits value
+
+/-- Bit length of a natural in the fixed self-delimiting source serialization. -/
+def natDescriptionSize (value : ℕ) : ℕ := (encodeNat value).length
+
+/-- Canonical signed-integer encoding used by the ordinary integer RAM. -/
+def encodeInt (value : ℤ) : List Bool := (value < 0) :: encodeNat value.natAbs
+
+/-- Bit length of a signed integer: sign plus self-delimiting magnitude. -/
+def intDescriptionSize (value : ℤ) : ℕ := (encodeInt value).length
+
+/-- Full description size of an address operand. -/
+def AddressOperand.descriptionSize (addressSize : Address → ℕ) : AddressOperand Address → ℕ
+  | .immediate address => 1 + addressSize address
+  | .reg register => 1 + natDescriptionSize register
+
+/-- Full description size of a data operand. -/
+def Operand.descriptionSize (literalSize : Literal → ℕ) (addressSize : Address → ℕ) :
+    Operand Literal Address → ℕ
+  | .immediate value => 1 + literalSize value
+  | .load address => 1 + address.descriptionSize addressSize
+
+namespace Instruction
+
+/--
+Full bit length of one prefix-tagged RAM instruction.  Source literals, addresses, register
+indices, extension payloads, and jump targets are all charged.
+-/
+def descriptionSize (literalSize : Literal → ℕ) (addressSize : Address → ℕ)
+    (extraSize : Extra → ℕ) : Instruction Literal Address Extra → ℕ
+  | .set source destination next =>
+      4 + source.descriptionSize literalSize addressSize + destination.descriptionSize addressSize +
+        natDescriptionSize next
+  | .add left right destination next | .sub left right destination next
+  | .mul left right destination next | .div left right destination next =>
+      4 + left.descriptionSize literalSize addressSize +
+        right.descriptionSize literalSize addressSize + destination.descriptionSize addressSize +
+        natDescriptionSize next
+  | .neg source destination next =>
+      4 + source.descriptionSize literalSize addressSize + destination.descriptionSize addressSize +
+        natDescriptionSize next
+  | .setAddress source destination next =>
+      4 + source.descriptionSize addressSize + natDescriptionSize destination +
+        natDescriptionSize next
+  | .addAddress left right destination next | .subAddress left right destination next =>
+      4 + left.descriptionSize addressSize + right.descriptionSize addressSize +
+        natDescriptionSize destination + natDescriptionSize next
+  | .compare left right less equal greater =>
+      4 + left.descriptionSize literalSize addressSize +
+        right.descriptionSize literalSize addressSize + natDescriptionSize less +
+        natDescriptionSize equal + natDescriptionSize greater
+  | .compareAddress left right less equal greater =>
+      4 + left.descriptionSize addressSize + right.descriptionSize addressSize +
+        natDescriptionSize less + natDescriptionSize equal + natDescriptionSize greater
+  | .extra instruction next => 4 + extraSize instruction + natDescriptionSize next
+  | .halt result => 4 + result.descriptionSize literalSize addressSize
+
+end Instruction
+
+namespace Program
+
+/-- Full source-description size including a self-delimiting instruction-count header. -/
+def descriptionSize (literalSize : Literal → ℕ) (addressSize : Address → ℕ)
+    (extraSize : Extra → ℕ) (program : Program Literal Address Extra) : ℕ :=
+  natDescriptionSize program.length +
+    (program.map (Instruction.descriptionSize literalSize addressSize extraSize)).sum
+
 end Program
 
 /-- Program counter and private memory. -/

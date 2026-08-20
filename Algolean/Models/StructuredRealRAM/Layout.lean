@@ -11,10 +11,10 @@ public import Algolean.Models.StructuredRealRAM.Core
 /-!
 # Canonical structured layouts
 
-`Layout` has a private constructor.  Clients can compose only the structural constructors in this
-module; there is intentionally no public custom encoder, decoder, or equivalence constructor.
-Every layout carries a kernel-checked round-trip certificate.  The implementation exposes its
-canonical streams for auditing, but input initialization is fixed by `Layout.init`.
+`Layout` is closed indexed syntax.  Clients can compose only the structural constructors declared
+by the inductive type; there is no custom encoder, decoder, map, or equivalence constructor.
+Encoding and decoding are fixed interpreters defined by recursion over that syntax.  Thus the
+kernel-visible shape of a layout, rather than declaration privacy, rules out input preprocessing.
 -/
 
 @[expose] public section
@@ -61,150 +61,234 @@ structure Encoding where
   nats : List ℕ
 
 /--
-A certified canonical layout.
+Closed syntax for canonical structured memory representations.
 
-The constructor is private: only the closed structural combinators below can create layouts.
-The decoder is library-defined metadata used to prove functionality; public algorithm statements
-interpret output through `RepAt`, never through a user-supplied decoding function.
+In particular, no constructor accepts a function `alpha → Encoding` or an equivalence to another
+carrier.  The only function-valued field below is a subtype predicate in `Prop`; proof fields are
+erased and the underlying value is represented structurally.
 -/
-structure Layout (alpha : Type u) where
-  private mk ::
-  /-- Auditable, structurally generated real and natural streams. -/
+inductive Layout : (alpha : Type) → Type 1 where
+  | unit : Layout Unit
+  | bool : Layout Bool
+  | nat : Layout ℕ
+  | int : Layout ℤ
+  | rat : Layout ℚ
+  | real : Layout ℝ
+  | fin (size : ℕ) : Layout (Fin size)
+  | bitVec (width : ℕ) : Layout (BitVec width)
+  | prod : Layout alpha → Layout beta → Layout (alpha × beta)
+  | sum : Layout alpha → Layout beta → Layout (Sum alpha beta)
+  | option : Layout alpha → Layout (Option alpha)
+  | array : Layout alpha → Layout (Array alpha)
+  | subtype (predicate : alpha → Prop) : Layout alpha → Layout {value : alpha // predicate value}
+
+/--
+A general round-trip serialization interface.  This is intentionally separate from `Layout` and
+is never accepted by the strongest machine-problem APIs: a round-trip law alone does not rule out
+arbitrary preprocessing in `encode`.
+-/
+structure CertifiedCodec (alpha : Type u) where
+  /-- Arbitrary client serializer; this is why the type is excluded from strong claims. -/
   encode : alpha → Encoding
-  /-- The inverse used internally to certify information preservation. -/
+  /-- Claimed inverse of the arbitrary serializer. -/
   decode : Encoding → Option alpha
-  /-- Kernel-checked left-inverse law. -/
+  /-- Round-trip guarantee, which does not prohibit preprocessing. -/
   decode_encode : ∀ value, decode (encode value) = some value
 
 namespace Layout
 
-set_option backward.privateInPublic true
-set_option backward.privateInPublic.warn false
-
-/-- Canonical layout for `Unit`. -/
-def unit : Layout Unit := Layout.mk
-  (fun _ => ⟨[], []⟩)
-  (fun
-    | ⟨[], []⟩ => some ()
-    | _ => none)
-  (by intro; rfl)
-
-/-- Canonical layout for natural numbers. -/
-def nat : Layout ℕ := Layout.mk
-  (fun value => ⟨[], [value]⟩)
-  (fun
-    | ⟨[], [value]⟩ => some value
-    | _ => none)
-  (by intro; rfl)
-
-/-- Canonical layout for exact real numbers. -/
-noncomputable def real : Layout ℝ := Layout.mk
-  (fun value => ⟨[value], []⟩)
-  (fun
-    | ⟨[value], []⟩ => some value
-    | _ => none)
-  (by intro; rfl)
-
-/--
-Canonical product layout.  Two natural header cells record the real and natural lengths of the
-left component; the streams themselves are fieldwise concatenations.
--/
-noncomputable def prod (left : Layout alpha) (right : Layout beta) : Layout (alpha × beta) :=
-  Layout.mk (fun value =>
-    let leftEncoding := left.encode value.1
-    let rightEncoding := right.encode value.2
-    ⟨leftEncoding.reals ++ rightEncoding.reals,
-      leftEncoding.reals.length :: leftEncoding.nats.length ::
-        (leftEncoding.nats ++ rightEncoding.nats)⟩)
-  (fun encoding =>
-    match encoding.nats with
-    | realLength :: natLength :: nats =>
-        match left.decode ⟨encoding.reals.take realLength, nats.take natLength⟩,
-          right.decode ⟨encoding.reals.drop realLength, nats.drop natLength⟩ with
-        | some leftValue, some rightValue => some (leftValue, rightValue)
-        | _, _ => none
-    | _ => none)
-  (by
-    intro value
-    simp only [List.take_left, List.drop_left]
-    rw [left.decode_encode, right.decode_encode])
+/-- Compact structural rendering used by typed audit reports. -/
+def syntaxName : (layout : Layout alpha) → String
+  | .unit => "unit"
+  | .bool => "bool"
+  | .nat => "nat"
+  | .int => "int"
+  | .rat => "rat"
+  | .real => "real"
+  | .fin size => "fin(" ++ toString size ++ ")"
+  | .bitVec width => "bitVec(" ++ toString width ++ ")"
+  | .prod left right => "prod(" ++ left.syntaxName ++ ", " ++ right.syntaxName ++ ")"
+  | .sum left right => "sum(" ++ left.syntaxName ++ ", " ++ right.syntaxName ++ ")"
+  | .option element => "option(" ++ element.syntaxName ++ ")"
+  | .array element => "array(" ++ element.syntaxName ++ ")"
+  | .subtype _ underlying => "subtype(" ++ underlying.syntaxName ++ ", proof-erased)"
 
 /-- Encode a list as length-delimited element chunks. -/
-private noncomputable def encodeList (layout : Layout alpha) : List alpha → Encoding
+noncomputable def encodeListWith (encodeElement : alpha → Encoding) : List alpha → Encoding
   | [] => ⟨[], []⟩
   | value :: values =>
-      let head := layout.encode value
-      let tail := encodeList layout values
+      let head := encodeElement value
+      let tail := encodeListWith encodeElement values
       ⟨head.reals ++ tail.reals,
         head.reals.length :: head.nats.length :: (head.nats ++ tail.nats)⟩
 
 /-- Decode exactly `count` length-delimited element chunks and return the unused streams. -/
-private noncomputable def decodeList (layout : Layout alpha) :
+noncomputable def decodeListWith (decodeElement : Encoding → Option alpha) :
     ℕ → Encoding → Option (List alpha × Encoding)
   | 0, encoding => some ([], encoding)
   | count + 1, encoding =>
       match encoding.nats with
       | realLength :: natLength :: nats =>
-          match layout.decode ⟨encoding.reals.take realLength, nats.take natLength⟩,
-            decodeList layout count
+          match decodeElement ⟨encoding.reals.take realLength, nats.take natLength⟩,
+            decodeListWith decodeElement count
               ⟨encoding.reals.drop realLength, nats.drop natLength⟩ with
           | some value, some (values, rest) => some (value :: values, rest)
           | _, _ => none
       | _ => none
 
-private theorem decodeList_encodeList (layout : Layout alpha) (values : List alpha) :
-    decodeList layout values.length (encodeList layout values) =
+theorem decodeListWith_encodeListWith (encodeElement : alpha → Encoding)
+    (decodeElement : Encoding → Option alpha)
+    (roundTrip : ∀ value, decodeElement (encodeElement value) = some value)
+    (values : List alpha) :
+    decodeListWith decodeElement values.length (encodeListWith encodeElement values) =
       some (values, ⟨[], []⟩) := by
   induction values with
   | nil => rfl
   | cons value values induction =>
-      simp only [encodeList, decodeList, List.length_cons,
+      simp only [encodeListWith, decodeListWith, List.length_cons,
         List.take_left, List.drop_left]
-      rw [layout.decode_encode, induction]
+      rw [roundTrip, induction]
 
-/--
-Canonical array layout.  The stream begins with the array length, and every element is prefixed by
-its two stream lengths.  This supports variable-footprint nested structural elements without an
-arbitrary host-language codec.
--/
-noncomputable def array (element : Layout alpha) : Layout (Array alpha) :=
-  Layout.mk (fun values =>
-    let body := encodeList element values.toList
-    ⟨body.reals, values.size :: body.nats⟩)
-  (fun encoding =>
-    match encoding.nats with
-    | count :: nats =>
-        match decodeList element count ⟨encoding.reals, nats⟩ with
-        | some (values, ⟨[], []⟩) => some values.toArray
-        | _ => none
-    | [] => none)
-  (by
-    intro values
-    rw [← Array.length_toList]
-    change (match decodeList element values.toList.length (encodeList element values.toList) with
-      | some (decoded, ⟨[], []⟩) => some decoded.toArray
-      | _ => none) = some values
-    rw [decodeList_encodeList])
+/-- Fixed structural encoder, interpreted by recursion over closed `Layout` syntax. -/
+noncomputable def encode : (layout : Layout alpha) → alpha → Encoding
+  | .unit, _ => ⟨[], []⟩
+  | .bool, value => ⟨[], [if value then 1 else 0]⟩
+  | .nat, value => ⟨[], [value]⟩
+  | .int, .ofNat value => ⟨[], [0, value]⟩
+  | .int, .negSucc value => ⟨[], [1, value]⟩
+  | .rat, value =>
+      match value.num with
+      | .ofNat numerator => ⟨[], [0, numerator, value.den]⟩
+      | .negSucc numerator => ⟨[], [1, numerator, value.den]⟩
+  | .real, value => ⟨[value], []⟩
+  | .fin _, value => ⟨[], [value.val]⟩
+  | .bitVec _, value => ⟨[], [value.toNat]⟩
+  | .prod left right, value =>
+      let leftEncoding := encode left value.1
+      let rightEncoding := encode right value.2
+      ⟨leftEncoding.reals ++ rightEncoding.reals,
+        leftEncoding.reals.length :: leftEncoding.nats.length ::
+          (leftEncoding.nats ++ rightEncoding.nats)⟩
+  | .sum left _, .inl value =>
+      let encoding := encode left value
+      ⟨encoding.reals, 0 :: encoding.nats⟩
+  | .sum _ right, .inr value =>
+      let encoding := encode right value
+      ⟨encoding.reals, 1 :: encoding.nats⟩
+  | .option _, none => ⟨[], [0]⟩
+  | .option element, some value =>
+      let encoding := encode element value
+      ⟨encoding.reals, 1 :: encoding.nats⟩
+  | .array element, values =>
+      let body := encodeListWith (encode element) values.toList
+      ⟨body.reals, values.size :: body.nats⟩
+  | .subtype _ underlying, value => encode underlying value.1
 
-/--
-Canonical proof-erasing subtype layout.  Only the underlying computational value is represented;
-the proposition is re-established in Lean and no proof term is placed in machine memory.
--/
-noncomputable def subtype (predicate : alpha → Prop) (underlying : Layout alpha) :
-    Layout {value : alpha // predicate value} := Layout.mk
-  (fun value => underlying.encode value.1)
-  (by
-    classical
-    exact fun encoding =>
-      match underlying.decode encoding with
-      | none => none
-      | some value => dite (predicate value)
-          (fun proof => some ⟨value, proof⟩) (fun _ => none))
-  (by
-    classical
-    rintro ⟨value, property⟩
-    rw [underlying.decode_encode]
-    simp [property])
+/-- Fixed structural decoder, interpreted by recursion over closed `Layout` syntax. -/
+noncomputable def decode : (layout : Layout alpha) → Encoding → Option alpha
+  | .unit, ⟨[], []⟩ => some ()
+  | .unit, _ => none
+  | .bool, ⟨[], [0]⟩ => some false
+  | .bool, ⟨[], [1]⟩ => some true
+  | .bool, _ => none
+  | .nat, ⟨[], [value]⟩ => some value
+  | .nat, _ => none
+  | .int, ⟨[], [0, value]⟩ => some (.ofNat value)
+  | .int, ⟨[], [1, value]⟩ => some (.negSucc value)
+  | .int, _ => none
+  | .rat, ⟨[], [sign, magnitude, denominator]⟩ => by
+      let numerator : ℤ := if sign = 0 then .ofNat magnitude else .negSucc magnitude
+      exact if denominatorZero : denominator = 0 then none
+        else some (Rat.normalize numerator denominator denominatorZero)
+  | .rat, _ => none
+  | .real, ⟨[value], []⟩ => some value
+  | .real, _ => none
+  | .fin size, ⟨[], [value]⟩ =>
+      if inRange : value < size then some ⟨value, inRange⟩ else none
+  | .fin _, _ => none
+  | .bitVec width, ⟨[], [value]⟩ =>
+      if inRange : value < 2 ^ width then some (BitVec.ofNat width value) else none
+  | .bitVec _, _ => none
+  | .prod left right, encoding =>
+      match encoding.nats with
+      | realLength :: natLength :: nats =>
+          match decode left ⟨encoding.reals.take realLength, nats.take natLength⟩,
+            decode right ⟨encoding.reals.drop realLength, nats.drop natLength⟩ with
+          | some leftValue, some rightValue => some (leftValue, rightValue)
+          | _, _ => none
+      | _ => none
+  | .sum left _, ⟨reals, 0 :: nats⟩ =>
+      (decode left ⟨reals, nats⟩).map Sum.inl
+  | .sum _ right, ⟨reals, 1 :: nats⟩ =>
+      (decode right ⟨reals, nats⟩).map Sum.inr
+  | .sum _ _, _ => none
+  | .option _, ⟨[], [0]⟩ => some none
+  | .option element, ⟨reals, 1 :: nats⟩ =>
+      (decode element ⟨reals, nats⟩).map some
+  | .option _, _ => none
+  | .array element, encoding =>
+      match encoding.nats with
+      | count :: nats =>
+          match decodeListWith (decode element) count ⟨encoding.reals, nats⟩ with
+          | some (values, ⟨[], []⟩) => some values.toArray
+          | _ => none
+      | [] => none
+  | .subtype predicate underlying, encoding => by
+      classical
+      exact match decode underlying encoding with
+        | none => none
+        | some value => dite (predicate value)
+            (fun proof => some ⟨value, proof⟩) (fun _ => none)
+
+/-- Every structural layout decoder is a left inverse of its fixed encoder. -/
+theorem decode_encode (layout : Layout alpha) (value : alpha) :
+    layout.decode (layout.encode value) = some value := by
+  induction layout with
+  | unit => cases value; rfl
+  | bool => cases value <;> rfl
+  | nat => rfl
+  | int => cases value <;> rfl
+  | rat =>
+      simp only [encode]
+      split <;> rename_i numerator <;> simp only [decode]
+      · simp only [value.den_ne_zero, ↓reduceDIte, Rat.normalize_eq_mkRat,
+          Option.some.injEq]
+        rw [← numerator]
+        exact value.mkRat_num_den'
+      · simp only [value.den_ne_zero, ↓reduceDIte, Rat.normalize_eq_mkRat,
+          Option.some.injEq]
+        rw [← numerator]
+        exact value.mkRat_num_den'
+  | real => rfl
+  | fin size => simp [encode, decode, value.isLt]
+  | bitVec width =>
+      simp only [encode, decode]
+      have inRange : value.toNat < 2 ^ width := value.toFin.isLt
+      simp only [inRange, ↓reduceDIte]
+      exact congrArg some (by simp)
+  | prod left right leftRoundTrip rightRoundTrip =>
+      simp only [encode, decode, List.take_left, List.drop_left]
+      rw [leftRoundTrip, rightRoundTrip]
+  | sum left right leftRoundTrip rightRoundTrip =>
+      cases value with
+      | inl value => simp [encode, decode, leftRoundTrip]
+      | inr value => simp [encode, decode, rightRoundTrip]
+  | option element elementRoundTrip =>
+      cases value with
+      | none => rfl
+      | some value => simp [encode, decode, elementRoundTrip]
+  | array element elementRoundTrip =>
+      simp only [encode, decode]
+      rw [← Array.length_toList]
+      change (match decodeListWith (decode element) value.toList.length
+          (encodeListWith (encode element) value.toList) with
+        | some (decoded, ⟨[], []⟩) => some decoded.toArray
+        | _ => none) = some value
+      rw [decodeListWith_encodeListWith _ _ elementRoundTrip]
+  | subtype predicate underlying underlyingRoundTrip =>
+      rcases value with ⟨value, property⟩
+      simp only [encode, decode, underlyingRoundTrip]
+      simp [property]
 
 /-- The footprint of a value is derived from its canonical encoding. -/
 noncomputable def footprint (layout : Layout alpha) (value : alpha) : Footprint :=

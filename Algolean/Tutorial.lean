@@ -175,9 +175,11 @@ and accumulated cost in the same execution.
 For an end-to-end structured exact-real claim, use `MachineProblem.HasFixedMachineAlgorithm`.
 Its witness is one `StructuredRealRAM.Program`; the program existential is outside every input.
 The machine has random-access real and natural banks, so exact weights and discrete lengths,
-indices, and tags do not require hidden conversions. Inputs and outputs use the closed
-`StructuredRealRAM.Layout` constructors (`unit`, `nat`, `real`, `prod`, `array`, and `subtype`).
-There is no public custom-codec constructor. Input size is derived from the layout footprint,
+indices, and tags do not require hidden conversions. Inputs and outputs use the closed inductive
+`StructuredRealRAM.Layout` constructors (`unit`, `bool`, `nat`, `int`, `rat`, `real`, `fin`,
+`bitVec`, `prod`, `sum`, `option`, `array`, and `subtype`). Its encoder and decoder are fixed
+recursive interpreters; there is no custom-codec or arbitrary-equivalence constructor. Input size
+is derived from the layout footprint,
 unused memory and registers start at zero, and output is a functional `Layout.RepAt` relation.
 
 Ordinary integer RAM and fixed-width word RAM use
@@ -187,17 +189,27 @@ input proves that the header and payload fit its `2^w` address space. A theorem 
 widths is a family theorem and should say so; a fixed-width predicate does not silently claim
 uniformity across widths.
 
-Use `MachineProblem.HasNonuniformFamily` only for size-indexed code and provide its code-size
-bound. `MachineProblem.HasUniformlyGeneratedFamily` additionally exposes the generator relation
-and generation cost. `MachineProblem.HasCompiledAlgorithm` accepts a first-order `CFG.Program`;
-the assembler shares join labels and `CFG.compile_length` reports exact target code size.
+Use `MachineProblem.HasNonuniformFamily` only for size-indexed code and provide separate
+instruction-count and full-description-size bounds. Full description size charges natural and
+rational literals, register indices, and jump targets.
+`MachineProblem.HasUniformlyGeneratedFamily` quantifies one sealed structured-real-RAM generator,
+ties the generated target's canonical binary serialization to the generator's final memory, and
+charges output materialization in the same trace. This is explicitly unit-cost unbounded-Nat
+generation, not word-RAM or bit generation. The caller-defined abstraction is named
+`MachineProblem.HasFamilyRelativeToGeneratorSpecification`; it is relative to those supplied
+semantics and must not be described as ordinary uniform generation.
+`MachineProblem.HasCompiledAlgorithm` accepts a first-order `CFG.Program`; the assembler shares join
+labels, `CFG.compile_length` reports exact target instruction count, and
+`CFG.compile_descriptionSize` includes generated numeric targets.
 
-Randomized statements use distinct `HasMonteCarloAlgorithm` and `HasLasVegasStepAlgorithm` forms.
-Both fix the machine program before the input and canonical random tape. Monte Carlo bounds cost
-for every tape and states a separate failure mass; Las Vegas requires correctness on every tape
-and names the scalar resource whose expectation is bounded. Oracle profiles should begin with an
-`OracleInterface`: typed queries and dependent answers, canonical layouts, answer validity,
-query/transfer costs, and a separate `Nonvacuous` proposition.
+Preferred randomized statements use `BitRandomizedMachineProblem.HasMonteCarloAlgorithm` and
+`HasTotalTapeLasVegasStepAlgorithm`. The iid fair-bit law is fixed by the library and its length
+depends only on represented input size; failure values carry a proof that they are at most one.
+The legacy `InputDependentTapeProblem` is explicitly relative to its tape law and can model
+input-dependent advice. Oracle profiles should begin with an `OracleInterface`: typed queries and
+dependent answers, canonical layouts, answer validity, named query cost, layout-derived answer
+transfer cells, and a separate `Nonvacuous` proposition. The current oracle module is a contract
+scaffold, not a complete oracle instruction/trace interface.
 
 ## 9. Audit the trust boundary
 

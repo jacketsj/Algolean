@@ -74,8 +74,17 @@ def SolvesWithin (problem : Problem) (program : Program) (bound : ℕ → ℕ) :
     SolvesInputWithin problem program input (bound (input.length + 1))
 
 /-- Preferred ordinary integer-RAM existential claim. -/
+structure FixedAlgorithmCertificate (problem : Problem) (bound : ℕ → ℕ) where
+  /-- Concrete ordinary integer-RAM program. -/
+  program : Program
+  /-- Program-counter validity. -/
+  valid : program.Valid
+  /-- Correctness and same-trace unit cost. -/
+  solves : SolvesWithin problem program bound
+
+/-- Existence of a typed ordinary integer-RAM certificate. -/
 def Problem.HasFixedMachineAlgorithm (problem : Problem) (bound : ℕ → ℕ) : Prop :=
-  ∃ program : Program, program.Valid ∧ SolvesWithin problem program bound
+  Nonempty (FixedAlgorithmCertificate problem bound)
 
 /-- Concise compatibility name for the fixed integer-RAM predicate. -/
 abbrev Problem.HasAlgorithm := Problem.HasFixedMachineAlgorithm
@@ -83,15 +92,32 @@ abbrev Problem.HasAlgorithm := Problem.HasFixedMachineAlgorithm
 /-- Short explicit alias for the fixed integer-RAM predicate. -/
 abbrev Problem.HasFixedAlgorithm := Problem.HasFixedMachineAlgorithm
 
-/-- A separately named nonuniform integer-RAM family with a code-size bound. -/
+/-- Full binary source-description size for the ordinary unbounded-integer RAM. -/
+def descriptionSize (program : Program) : ℕ :=
+  RAM.Program.descriptionSize RAM.intDescriptionSize RAM.natDescriptionSize
+    (fun instruction : Empty => nomatch instruction) program
+
+/-- A typed nonuniform ordinary-RAM family certificate with both code metrics. -/
+structure NonuniformFamilyCertificate (problem : Problem)
+    (timeBound instructionBound descriptionBound : ℕ → ℕ) where
+  /-- One ordinary integer-RAM program per native input size. -/
+  code : ℕ → Program
+  /-- Program-counter validity for every member. -/
+  valid : ∀ size, (code size).Valid
+  /-- Instruction-count bound. -/
+  instructionSize : ∀ size,
+    RAM.Program.instructionCount (code size) ≤ instructionBound size
+  /-- Full source-description bound. -/
+  fullDescriptionSize : ∀ size, descriptionSize (code size) ≤ descriptionBound size
+  /-- Correctness and time bound for every valid input. -/
+  solves : ∀ input, problem.pre input →
+    let size := input.length + 1
+    SolvesInputWithin problem (code size) input (timeBound size)
+
+/-- A separately named nonuniform integer-RAM family with full description-size metadata. -/
 def Problem.HasNonuniformFamily (problem : Problem)
-    (timeBound codeBound : ℕ → ℕ) : Prop :=
-  ∃ code : ℕ → Program,
-    (∀ size, (code size).Valid) ∧
-    (∀ size, (code size).length ≤ codeBound size) ∧
-    (∀ input, problem.pre input →
-      let size := input.length + 1
-      SolvesInputWithin problem (code size) input (timeBound size))
+    (timeBound instructionBound descriptionBound : ℕ → ℕ) : Prop :=
+  Nonempty (NonuniformFamilyCertificate problem timeBound instructionBound descriptionBound)
 
 end IntegerRAM
 
@@ -153,8 +179,17 @@ def SolvesWithin (problem : Problem w) (program : Program w) (bound : ℕ → �
     SolvesInputWithin problem program input (bound (input.cells.length + 1))
 
 /-- Preferred fixed-width word-RAM existential claim.  Width is outside the program existential. -/
+structure FixedAlgorithmCertificate (problem : Problem w) (bound : ℕ → ℕ) where
+  /-- Concrete program at the explicitly fixed word width. -/
+  program : Program w
+  /-- Program-counter validity. -/
+  valid : program.Valid
+  /-- Correctness and same-trace unit cost. -/
+  solves : SolvesWithin problem program bound
+
+/-- Existence of a typed fixed-width word-RAM certificate. -/
 def Problem.HasFixedMachineAlgorithm (problem : Problem w) (bound : ℕ → ℕ) : Prop :=
-  ∃ program : Program w, program.Valid ∧ SolvesWithin problem program bound
+  Nonempty (FixedAlgorithmCertificate problem bound)
 
 /-- Concise compatibility name for the fixed-width word-RAM predicate. -/
 abbrev Problem.HasAlgorithm (problem : Problem w) (bound : ℕ → ℕ) : Prop :=
@@ -164,15 +199,32 @@ abbrev Problem.HasAlgorithm (problem : Problem w) (bound : ℕ → ℕ) : Prop :
 abbrev Problem.HasFixedAlgorithm (problem : Problem w) (bound : ℕ → ℕ) : Prop :=
   problem.HasFixedMachineAlgorithm bound
 
-/-- A separately named nonuniform family at one fixed word width, with code-size metadata. -/
+/-- Full binary source-description size for a `w`-bit word-RAM program. -/
+def descriptionSize (program : Program w) : ℕ :=
+  RAM.Program.descriptionSize (fun _ => w) (fun _ => w)
+    (fun instruction : Empty => nomatch instruction) program
+
+/-- A typed nonuniform fixed-width word-RAM family certificate with both code metrics. -/
+structure NonuniformFamilyCertificate (problem : Problem w)
+    (timeBound instructionBound descriptionBound : ℕ → ℕ) where
+  /-- One fixed-width word-RAM program per native input size. -/
+  code : ℕ → Program w
+  /-- Program-counter validity for every member. -/
+  valid : ∀ size, (code size).Valid
+  /-- Instruction-count bound. -/
+  instructionSize : ∀ size,
+    RAM.Program.instructionCount (code size) ≤ instructionBound size
+  /-- Full source-description bound at width `w`. -/
+  fullDescriptionSize : ∀ size, descriptionSize (code size) ≤ descriptionBound size
+  /-- Correctness and time bound for every valid input. -/
+  solves : ∀ input, problem.pre input →
+    let size := input.cells.length + 1
+    SolvesInputWithin problem (code size) input (timeBound size)
+
+/-- A separately named nonuniform family at one fixed width, with full description metadata. -/
 def Problem.HasNonuniformFamily (problem : Problem w)
-    (timeBound codeBound : ℕ → ℕ) : Prop :=
-  ∃ code : ℕ → Program w,
-    (∀ size, (code size).Valid) ∧
-    (∀ size, (code size).length ≤ codeBound size) ∧
-    (∀ input, problem.pre input →
-      let size := input.cells.length + 1
-      SolvesInputWithin problem (code size) input (timeBound size))
+    (timeBound instructionBound descriptionBound : ℕ → ℕ) : Prop :=
+  Nonempty (NonuniformFamilyCertificate problem timeBound instructionBound descriptionBound)
 
 end WordRAM
 
