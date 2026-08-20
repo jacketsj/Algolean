@@ -77,6 +77,14 @@ def QueryProblem.InClass [AddZero Cost] [Preorder Cost]
     (prob : QueryProblem Q Cost α) (bound : Cost) : Prop :=
   ∃ P : Prog Q α, SolvesWithin P prob bound
 
+/--
+Explicit public name for a `Prog`-based query-complexity claim.  Only emitted query costs are
+charged; pure Lean computation between queries remains uncharged.
+-/
+abbrev QueryProblem.HasQueryAlgorithm [AddZero Cost] [Preorder Cost]
+    (prob : QueryProblem Q Cost α) (bound : Cost) : Prop :=
+  prob.InClass bound
+
 /-- `SolvesWithin` implies `Solves`. -/
 theorem SolvesWithin.solves [AddZero Cost] [Preorder Cost]
     {P : Prog Q α} {prob : QueryProblem Q Cost α} {bound : Cost}

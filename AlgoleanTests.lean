@@ -1,6 +1,7 @@
 module  -- shake: keep-all --deprecated_module: ignore
 
 public import AlgoleanTests.CircuitExamples
+public import AlgoleanTests.ExistentialAlgorithms
 public import AlgoleanTests.ExtendedRealRAMExamples
 public import AlgoleanTests.FreeMonadWP
 public import AlgoleanTests.GaussianAlgorithmsExamples

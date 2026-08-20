@@ -8,9 +8,34 @@ input-dependent loops. Data and address registers have separate types, avoiding 
 real-to-natural conversion in the real RAM. The existing square-root, power, exponential,
 logarithmic, trigonometric, root, and floor extensions also have typed program instructions.
 
+For auditable existential algorithm statements, use the APIs added under
+`Algolean.Complexity.MachineProblem` and `Algolean.Complexity.RAMProblem`:
+
+- `MachineProblem.HasFixedMachineAlgorithm` uses the sealed two-bank `StructuredRealRAM`, closed
+  structural layouts, canonical zero initialization, relational outputs, and one costed halting
+  trace for both correctness and resources.
+- `IntegerRAM.Problem.HasFixedMachineAlgorithm` and
+  `WordRAM.Problem.HasFixedMachineAlgorithm` provide the corresponding fixed-program claims for
+  native cell-array inputs. Word width and address-space fit are explicit.
+- `HasNonuniformFamily` and `HasUniformlyGeneratedFamily` are separate from fixed-program claims
+  and carry code-size (and, for generated families, generation) obligations.
+- `HasMonteCarloAlgorithm` and `HasLasVegasStepAlgorithm` fix the program before inputs and random
+  tapes; Monte Carlo uses worst-case tape cost, while Las Vegas exposes the scalarized expectation.
+- `QueryProblem.HasQueryAlgorithm` is the explicit name for the existing `Prog` claim, where pure
+  Lean work between emitted queries is uncharged.
+
+`Algolean.Compiler.CFG` supplies first-order labeled blocks, shared branch joins, backward runtime
+loops, typed register handles, numeric-jump assembly, and an exact emitted-code-size theorem.
+`Algolean.Audit.Algorithm` provides manifest metadata that records the claim and cost source;
+`#algorithm_audit manifestName` prints its compact report.
+Typed oracle contracts use canonical query/answer layouts and explicit transfer costs in
+`Algolean.Models.StructuredRealRAM.Oracle`; admissible-oracle non-vacuity is a separate proposition.
+
 The checked module [`Algolean.Tutorial`](Algolean/Tutorial.lean) explains how to define a query
 language, prove functional correctness and cost, package a problem statement, choose between
-`Prog` and a uniform RAM program, and audit the resulting guarantee.
+`Prog` and a fixed RAM program, and audit the resulting guarantee. Checked acceptance examples for
+the new interfaces are in
+[`AlgoleanTests.ExistentialAlgorithms`](AlgoleanTests/ExistentialAlgorithms.lean).
 
 ## Nomenclature
 `Algolean` is a pun. It is intended to be read in two ways.

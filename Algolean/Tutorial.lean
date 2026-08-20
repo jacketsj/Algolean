@@ -7,7 +7,7 @@ Authors: Algolean contributors
 module
 
 public import Algolean.Complexity.Basic
-public import Algolean.Models.RAM
+public import Algolean.Audit.Algorithm
 public import Algolean.QueryComposition
 
 /-!
@@ -160,7 +160,7 @@ are in `AlgoleanTests/FreeMonadWP.lean`; `Algolean/Algorithms/VecBubbleSort.lean
 invariants, while `Algolean/Algorithms/ListInsertionSort.lean` shows direct recursive evaluation
 and complexity proofs.
 
-## 8. Use a RAM when a uniform machine matters
+## 8. Use a fixed RAM claim when uniform machine code matters
 
 An arbitrary `Prog` contains Lean continuations and may perform uncharged pure work. The compact
 `RAM` model instead uses an ordinary finite instruction list with numeric jumps. Backward jumps
@@ -169,9 +169,35 @@ the same instruction semantics; only their literal and arithmetic operations dif
 
 `RAM.runFor` observes a program for a given number of unit-cost instructions and reports halt,
 timeout, or an invalid program counter. `RAM.Reaches` gives the corresponding unbounded
-small-step semantics. Data and addresses are separate types, so the real RAM does not silently
-acquire a floor or real-to-natural primitive. The existing real-RAM extensions provide matching
-typed machine instructions and can be combined with `RAM.sumExtra`.
+small-step semantics. `RAM.CostedSemantics` and `RAM.HaltingTrace` additionally couple behavior
+and accumulated cost in the same execution.
+
+For an end-to-end structured exact-real claim, use `MachineProblem.HasFixedMachineAlgorithm`.
+Its witness is one `StructuredRealRAM.Program`; the program existential is outside every input.
+The machine has random-access real and natural banks, so exact weights and discrete lengths,
+indices, and tags do not require hidden conversions. Inputs and outputs use the closed
+`StructuredRealRAM.Layout` constructors (`unit`, `nat`, `real`, `prod`, `array`, and `subtype`).
+There is no public custom-codec constructor. Input size is derived from the layout footprint,
+unused memory and registers start at zero, and output is a functional `Layout.RepAt` relation.
+
+Ordinary integer RAM and fixed-width word RAM use
+`IntegerRAM.Problem.HasFixedMachineAlgorithm` and `WordRAM.Problem.HasFixedMachineAlgorithm`.
+Their strongest input route is a canonical native cell array with a length header. A word-RAM
+input proves that the header and payload fit its `2^w` address space. A theorem ranging over word
+widths is a family theorem and should say so; a fixed-width predicate does not silently claim
+uniformity across widths.
+
+Use `MachineProblem.HasNonuniformFamily` only for size-indexed code and provide its code-size
+bound. `MachineProblem.HasUniformlyGeneratedFamily` additionally exposes the generator relation
+and generation cost. `MachineProblem.HasCompiledAlgorithm` accepts a first-order `CFG.Program`;
+the assembler shares join labels and `CFG.compile_length` reports exact target code size.
+
+Randomized statements use distinct `HasMonteCarloAlgorithm` and `HasLasVegasStepAlgorithm` forms.
+Both fix the machine program before the input and canonical random tape. Monte Carlo bounds cost
+for every tape and states a separate failure mass; Las Vegas requires correctness on every tape
+and names the scalar resource whose expectation is bounded. Oracle profiles should begin with an
+`OracleInterface`: typed queries and dependent answers, canonical layouts, answer validity,
+query/transfer costs, and a separate `Nonvacuous` proposition.
 
 ## 9. Audit the trust boundary
 
@@ -187,6 +213,8 @@ Before treating a theorem as an algorithmic guarantee, check:
 - A reduction must not hide numeric work or memory access in `pure`.
 - Initialization and finalization are charged, or the input/output encoding contract says
   explicitly that they are external.
+- For the strongest structured claim, input size comes from `Layout.footprint`, output meaning
+  comes from `Layout.RepAt`, and both result and cost come from one `HaltingTrace`.
 - RAM fuel bounds an observation of cyclic code. A successful theorem must prove a halted result
   rather than treating `outOfFuel` as an answer.
 - For program families (including varying word widths), state and justify the uniformity and source
@@ -196,7 +224,8 @@ Before treating a theorem as an algorithmic guarantee, check:
 - The Lean kernel and any axioms used by imported mathematics remain foundational assumptions.
 
 The small lookup development above is the direct `Prog` route. Cyclic machine examples are in
-`AlgoleanTests/RAMExamples.lean`.
+`AlgoleanTests/RAMExamples.lean`; fixed-claim, structured-layout, CFG shared-join, integer-RAM,
+and word-RAM checks are in `AlgoleanTests/ExistentialAlgorithms.lean`.
 -/
 
 end Algolean.Tutorial

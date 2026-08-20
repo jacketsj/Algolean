@@ -86,6 +86,29 @@ inductive Instruction (Literal Address Extra : Type*) where
 /-- A RAM program is ordinary finite code; jumps, including backward jumps, are program counters. -/
 abbrev Program (Literal Address Extra : Type*) := List (Instruction Literal Address Extra)
 
+namespace Instruction
+
+/-- Numeric successors stored by an instruction. -/
+def successors : Instruction Literal Address Extra → List ℕ
+  | .set _ _ next | .add _ _ _ next | .sub _ _ _ next | .mul _ _ _ next
+  | .div _ _ _ next | .neg _ _ next | .setAddress _ _ next
+  | .addAddress _ _ _ next | .subAddress _ _ _ next | .extra _ next => [next]
+  | .compare _ _ less equal greater | .compareAddress _ _ less equal greater =>
+      [less, equal, greater]
+  | .halt _ => []
+
+end Instruction
+
+namespace Program
+
+/-- Every numeric successor stored in a finite RAM program is a valid program counter. -/
+def Valid (program : Program Literal Address Extra) : Prop :=
+  ∀ (pc : ℕ) (instruction : Instruction Literal Address Extra),
+    program[pc]? = some instruction →
+      ∀ target ∈ instruction.successors, target < program.length
+
+end Program
+
 /-- Program counter and private memory. -/
 structure Configuration (Value Address : Type*) where
   /-- Program counter. -/
@@ -374,5 +397,27 @@ noncomputable def runFor (program : Program) (fuel : ℕ) (memory : MachineMemor
   runForExtra RAM.noExtra program fuel memory
 
 end RealRAM
+
+/-!
+The sealed extension-free exact-real RAM profile.  Prefer this namespace in public fixed-machine
+claims when the older one-bank RAM is intended; unlike `RealRAM.Program Extra`, its program type
+cannot be instantiated with a client-selected extension instruction.
+-/
+namespace CoreRealRAM
+
+/-- One-bank, extension-free exact-real RAM programs. -/
+abbrev Program := RAM.Program ℚ ℕ Empty
+/-- One-bank exact-real memory with natural address registers. -/
+abbrev Memory := RAM.Memory ℝ ℕ
+/-- Runtime configuration for the extension-free exact-real RAM. -/
+abbrev Configuration := RAM.Configuration ℝ ℕ
+/-- Fuel-bounded result for the extension-free exact-real RAM. -/
+abbrev RunResult := RAM.RunResult ℝ ℕ
+
+/-- Run a sealed extension-free exact-real RAM program. -/
+noncomputable def runFor (program : Program) (fuel : ℕ) (memory : Memory) : RunResult :=
+  RealRAM.runFor program fuel memory
+
+end CoreRealRAM
 
 end Algolean.Algorithms

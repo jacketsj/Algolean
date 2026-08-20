@@ -1,6 +1,7 @@
 module  -- shake: keep-all --deprecated_module: ignore
 
 public import Algolean.AddWriter.Basic
+public import Algolean.Audit.Algorithm
 public import Algolean.Algorithms.Circuits.FanInTwo.LogAnd
 public import Algolean.Algorithms.GaussianJL
 public import Algolean.Algorithms.GaussianJLProbability
@@ -15,7 +16,12 @@ public import Algolean.Algorithms.NaivePatternSearch
 public import Algolean.Algorithms.VecBubbleSort
 public import Algolean.Algorithms.VecSearch
 public import Algolean.Complexity.Basic
+public import Algolean.Complexity.MachineProblem
 public import Algolean.Complexity.PolytimeBasicClasses
+public import Algolean.Complexity.RAMProblem
+public import Algolean.Complexity.RandomizedMachineProblem
+public import Algolean.Compiler.CFG
+public import Algolean.Compiler.StructuredBuilder
 public import Algolean.FreeWP.Effects
 public import Algolean.FreeWP.WP
 public import Algolean.LowerBounds.ComparisonSort
@@ -30,9 +36,13 @@ public import Algolean.Models.Quantum.Indexing
 public import Algolean.Models.Quantum.Oracle
 public import Algolean.Models.RandomSample
 public import Algolean.Models.RAM
+public import Algolean.Models.RAM.Costed
 public import Algolean.Models.RealRAM
 public import Algolean.Models.RealRAM.ContinuousRandom
 public import Algolean.Models.RealRAM.Extensions
+public import Algolean.Models.StructuredRealRAM.Core
+public import Algolean.Models.StructuredRealRAM.Layout
+public import Algolean.Models.StructuredRealRAM.Oracle
 public import Algolean.Models.ReadOnlyVec
 public import Algolean.Models.ReadWriteVec
 public import Algolean.Models.RobertsonWebb
