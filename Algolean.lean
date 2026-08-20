@@ -17,6 +17,7 @@ public import Algolean.Algorithms.VecBubbleSort
 public import Algolean.Algorithms.VecSearch
 public import Algolean.Complexity.Basic
 public import Algolean.Complexity.MachineProblem
+public import Algolean.Complexity.OracleMachineProblem
 public import Algolean.Complexity.PolytimeBasicClasses
 public import Algolean.Complexity.RAMProblem
 public import Algolean.Complexity.RandomizedMachineProblem
@@ -43,6 +44,8 @@ public import Algolean.Models.RealRAM.Extensions
 public import Algolean.Models.StructuredRealRAM.Core
 public import Algolean.Models.StructuredRealRAM.Layout
 public import Algolean.Models.StructuredRealRAM.Oracle
+public import Algolean.Models.StructuredRealRAM.Random
+public import Algolean.Models.StructuredRealRAM.UniformReal
 public import Algolean.Models.ReadOnlyVec
 public import Algolean.Models.ReadWriteVec
 public import Algolean.Models.RobertsonWebb

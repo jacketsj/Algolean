@@ -22,9 +22,16 @@ For auditable existential algorithm statements, use the APIs added under
   one sealed structured-real-RAM generator and materializes the target's canonical binary
   serialization in charged output memory. The caller-defined alternative is honestly named
   `HasFamilyRelativeToGeneratorSpecification`; it is not an absolute uniform claim.
-- `BitRandomizedMachineProblem.HasMonteCarloAlgorithm` uses a library-fixed iid fair-bit tape law
-  whose length depends only on represented input size. Arbitrary input-dependent laws survive only
-  under `InputDependentTapeProblem` names ending in `RelativeToTapeLaw`.
+- `BitRandomizedMachineProblem.HasMonteCarloAlgorithm` uses a hidden, lengthless source with the
+  library-fixed iid fair-bit product law. A program can observe it only through a closed, charged
+  `randBit` instruction; random draws and output come from the same trace. Arbitrary input-dependent
+  laws survive only under `InputDependentTapeProblem` names ending in `RelativeToTapeLaw`, and
+  observable finite bit-count schedules only under `ScheduledBitTapeProblem` names ending in
+  `RelativeToBitCountSchedule`.
+- `UniformRealRandomizedMachineProblem.HasMonteCarloAlgorithm` is a separate stronger profile with
+  a hidden lengthless product source of exact uniform `[0,1]` values and one closed, charged
+  `sampleUniform` instruction. Other distributions must be implemented from named primitives or
+  introduced as separately disclosed machine profiles.
 - `QueryProblem.HasQueryAlgorithm` is the explicit name for the existing `Prog` claim, where pure
   Lean work between emitted queries is uncharged.
 
@@ -32,19 +39,24 @@ For auditable existential algorithm statements, use the APIs added under
 loops, typed register handles, numeric-jump assembly, and an exact emitted-code-size theorem.
 `Algolean.Audit.Algorithm` records and prints every manifest field: layouts, both code-size metrics,
 generation, randomness, oracles, extensions, machine conventions, claim kind, and cost source.
-`#algorithm_audit publication` consumes a typed structured-, integer-, or word-RAM publication and
-computes code sizes from its actual certificate; `#algorithm_manifest metadata` prints legacy
-name-only navigation metadata without claiming consistency. Modules executing either command need
-a `meta import Algolean.Audit.Algorithm` under Lean's module system.
-Typed oracle contracts use canonical query/answer layouts and layout-derived answer-transfer cell
-counts in `Algolean.Models.StructuredRealRAM.Oracle`; admissible-oracle non-vacuity is separate. The
-oracle module remains a contract scaffold rather than a same-trace oracle-machine claim.
+`#algorithm_audit publication` consumes typed deterministic, compiled, generated-family,
+randomized, oracle, integer-RAM, or word-RAM publications and computes concrete code sizes from
+their actual certificates; `#algorithm_manifest metadata` prints legacy name-only navigation
+metadata without claiming consistency. Modules executing either command need a
+`meta import Algolean.Audit.Algorithm` under Lean's module system.
+`OracleMachineProblem.HasOracleAlgorithm` uses a closed `oracleCall` instruction, canonical
+query/answer layouts, layout-derived transfer costs, one responder fixed throughout each trace,
+and a typed certificate that both proves interface non-vacuity and works for every admissible
+responder.
 
 Machine conventions are intentionally distinct. `IntegerRAM` is an ordinary unit-cost RAM with
 unbounded signed integer data and natural addresses. `WordRAM` has explicit fixed-width modular
 words and addresses. `StructuredRealRAM` has exact reals plus an unbounded unit-cost natural bank,
 totalized real division, truncating natural subtraction, rational source literals, and
 represented-cell input size. These are different complexity models, not interchangeable labels.
+The random-bit and exact-uniform profiles extend `StructuredRealRAM` only; they do not silently
+establish randomized integer-RAM or word-RAM claims. Those require their own explicitly sealed
+native profiles and certificates.
 
 The checked module [`Algolean.Tutorial`](Algolean/Tutorial.lean) explains how to define a query
 language, prove functional correctness and cost, package a problem statement, choose between

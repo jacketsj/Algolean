@@ -187,7 +187,9 @@ Ordinary integer RAM and fixed-width word RAM use
 Their strongest input route is a canonical native cell array with a length header. A word-RAM
 input proves that the header and payload fit its `2^w` address space. A theorem ranging over word
 widths is a family theorem and should say so; a fixed-width predicate does not silently claim
-uniformity across widths.
+uniformity across widths. The sealed random-bit and exact-uniform profiles in this chapter extend
+the structured exact-real RAM, not these native machines; randomized integer- or word-RAM claims
+need separately defined sealed profiles rather than an implicit model transfer.
 
 Use `MachineProblem.HasNonuniformFamily` only for size-indexed code and provide separate
 instruction-count and full-description-size bounds. Full description size charges natural and
@@ -203,13 +205,25 @@ labels, `CFG.compile_length` reports exact target instruction count, and
 `CFG.compile_descriptionSize` includes generated numeric targets.
 
 Preferred randomized statements use `BitRandomizedMachineProblem.HasMonteCarloAlgorithm` and
-`HasTotalTapeLasVegasStepAlgorithm`. The iid fair-bit law is fixed by the library and its length
-depends only on represented input size; failure values carry a proof that they are at most one.
+`HasEverySourceLasVegasStepAlgorithm`. The library fixes a hidden, lengthless iid fair-bit product
+source. The closed `randBit` instruction consumes one coordinate, advances an inaccessible cursor,
+and charges the draw in the same trace; failure values carry a proof that they are at most one.
 The legacy `InputDependentTapeProblem` is explicitly relative to its tape law and can model
-input-dependent advice. Oracle profiles should begin with an `OracleInterface`: typed queries and
-dependent answers, canonical layouts, answer validity, named query cost, layout-derived answer
-transfer cells, and a separate `Nonvacuous` proposition. The current oracle module is a contract
-scaffold, not a complete oracle instruction/trace interface.
+input-dependent advice. `ScheduledBitTapeProblem` is likewise explicitly relative to its
+observable size-indexed tape-length schedule.
+
+Applications needing exact continuous randomness should use the separately named
+`UniformRealRandomizedMachineProblem.HasMonteCarloAlgorithm`. Its `sampleUniform` instruction
+draws from a hidden product source of exact uniform `[0,1]` values. This is explicitly a stronger
+machine than the random-bit RAM; a Gaussian or other distribution is not silently treated as the
+same primitive.
+
+`OracleMachineProblem.HasOracleAlgorithm` fixes an `OracleInterface` before the program witness:
+typed queries and dependent answers, canonical layouts, answer validity, and named query cost.
+The closed `oracleCall` instruction decodes the query structurally, uses one responder fixed for
+the whole run, writes the answer with a layout-derived transfer charge, and records all costs in
+the output trace. The preferred certificate proves the interface non-vacuous and works for every
+admissible responder.
 
 ## 9. Audit the trust boundary
 

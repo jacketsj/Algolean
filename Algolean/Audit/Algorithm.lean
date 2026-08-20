@@ -7,7 +7,9 @@ Authors: Algolean contributors
 module
 
 public import Algolean.Complexity.MachineProblem
+public import Algolean.Complexity.OracleMachineProblem
 public import Algolean.Complexity.RAMProblem
+public import Algolean.Complexity.RandomizedMachineProblem
 
 /-!
 # Algorithm audit manifests
@@ -32,6 +34,7 @@ inductive ClaimKind where
   | compiledAlgorithm
   | monteCarloAlgorithm
   | totalTapeLasVegasAlgorithm
+  | everySourceLasVegasAlgorithm
 deriving DecidableEq, Repr
 
 /-- Whether reported execution costs count target steps or named weighted transitions. -/
@@ -139,6 +142,126 @@ structure WordRAMPublication (problem : WordRAM.Problem width) (bound : ℕ → 
   /-- Explicit semantic caveats. -/
   warnings : List String := []
 
+/-- Typed publication artifact for a compiled first-order CFG algorithm. -/
+structure CompiledAlgorithmPublication (problem : MachineProblem)
+    (bound : ℕ → StructuredRealRAM.Cost) where
+  /-- Actual compiled-algorithm certificate. -/
+  certificate : MachineProblem.CompiledAlgorithmCertificate problem bound
+  /-- Declaration name of this publication. -/
+  certificateName : Lean.Name
+  /-- Mathematical problem declaration. -/
+  problemName : Lean.Name
+  /-- Resource-bound declaration. -/
+  boundName : Lean.Name
+  /-- Certificate construction or exposure theorem. -/
+  correctnessTheorem : Lean.Name
+  /-- Explicit caveats. -/
+  warnings : List String := []
+
+/-- Typed publication artifact for an absolute same-trace uniformly generated family. -/
+structure UniformlyGeneratedFamilyPublication
+    (problem : MachineProblem)
+    (generationBound : ℕ → StructuredRealRAM.Cost)
+    (instructionBound descriptionBound : ℕ → ℕ)
+    (timeBound : ℕ → StructuredRealRAM.Cost) where
+  /-- Actual sealed-generator certificate. -/
+  certificate : MachineProblem.UniformlyGeneratedFamilyCertificate problem generationBound
+    instructionBound descriptionBound timeBound
+  /-- Declaration name of this publication. -/
+  certificateName : Lean.Name
+  /-- Mathematical problem declaration. -/
+  problemName : Lean.Name
+  /-- Generator resource-bound declaration. -/
+  generationBoundName : Lean.Name
+  /-- Target instruction-count bound. -/
+  instructionBoundName : Lean.Name
+  /-- Target full-description-size bound. -/
+  descriptionBoundName : Lean.Name
+  /-- Generated target execution bound. -/
+  timeBoundName : Lean.Name
+  /-- Certificate construction or exposure theorem. -/
+  correctnessTheorem : Lean.Name
+  /-- Explicit caveats. -/
+  warnings : List String := []
+
+/-- Typed publication artifact for the hidden lengthless iid-bit Monte Carlo profile. -/
+structure MonteCarloAlgorithmPublication
+    (problem : BitRandomizedMachineProblem)
+    (bound : ℕ → StructuredRealRAM.RandomBit.Cost)
+    (failure : problem.Input → Probability) where
+  /-- Actual hidden-source Monte Carlo certificate. -/
+  certificate : BitRandomizedMachineProblem.MonteCarloAlgorithmCertificate problem bound failure
+  /-- Declaration name of this publication. -/
+  certificateName : Lean.Name
+  /-- Mathematical problem declaration. -/
+  problemName : Lean.Name
+  /-- Resource-bound declaration. -/
+  boundName : Lean.Name
+  /-- Failure-probability declaration. -/
+  failureName : Lean.Name
+  /-- Certificate construction or exposure theorem. -/
+  correctnessTheorem : Lean.Name
+  /-- Explicit caveats. -/
+  warnings : List String := []
+
+/-- Typed publication artifact for the stronger exact-uniform-real Monte Carlo profile. -/
+structure UniformRealMonteCarloAlgorithmPublication
+    (problem : UniformRealRandomizedMachineProblem)
+    (bound : ℕ → StructuredRealRAM.UniformReal.Cost)
+    (failure : problem.Input → Probability) where
+  /-- Actual exact-uniform-real Monte Carlo certificate. -/
+  certificate :
+    UniformRealRandomizedMachineProblem.MonteCarloAlgorithmCertificate problem bound failure
+  /-- Declaration name of this publication. -/
+  certificateName : Lean.Name
+  /-- Mathematical problem declaration. -/
+  problemName : Lean.Name
+  /-- Resource-bound declaration. -/
+  boundName : Lean.Name
+  /-- Failure-probability declaration. -/
+  failureName : Lean.Name
+  /-- Certificate construction or exposure theorem. -/
+  correctnessTheorem : Lean.Name
+  /-- Explicit caveats. -/
+  warnings : List String := []
+
+/-- Typed publication artifact for every-source-correct Las Vegas step complexity. -/
+structure EverySourceLasVegasAlgorithmPublication
+    (problem : BitRandomizedMachineProblem) (bound : ℕ → ENNReal) where
+  /-- Actual every-source Las Vegas certificate. -/
+  certificate :
+    BitRandomizedMachineProblem.EverySourceLasVegasStepAlgorithmCertificate problem bound
+  /-- Declaration name of this publication. -/
+  certificateName : Lean.Name
+  /-- Mathematical problem declaration. -/
+  problemName : Lean.Name
+  /-- Expected-step-bound declaration. -/
+  boundName : Lean.Name
+  /-- Certificate construction or exposure theorem. -/
+  correctnessTheorem : Lean.Name
+  /-- Explicit caveats. -/
+  warnings : List String := []
+
+/-- Typed publication artifact for a non-vacuous every-responder oracle-machine claim. -/
+structure OracleAlgorithmPublication (problem : OracleMachineProblem)
+    (bound : ℕ → StructuredRealRAM.Cost) where
+  /-- Actual non-vacuous robust oracle certificate. -/
+  certificate : OracleMachineProblem.OracleAlgorithmCertificate problem bound
+  /-- Declaration name of this publication. -/
+  certificateName : Lean.Name
+  /-- Mathematical problem declaration. -/
+  problemName : Lean.Name
+  /-- Fixed typed oracle-interface declaration. -/
+  interfaceName : Lean.Name
+  /-- Interface non-vacuity theorem. -/
+  nonvacuityTheorem : Lean.Name
+  /-- Same-trace resource-bound declaration. -/
+  boundName : Lean.Name
+  /-- Certificate construction or exposure theorem. -/
+  correctnessTheorem : Lean.Name
+  /-- Explicit caveats. -/
+  warnings : List String := []
+
 /-- Standard audit metadata for the sealed structured exact-real profile. -/
 def structuredRealRAMMachineName : Lean.Name :=
   `Algolean.Algorithms.StructuredRealRAM.coreProfile
@@ -170,6 +293,7 @@ def ClaimKind.label : ClaimKind → String
   | .compiledAlgorithm => "compiled algorithm"
   | .monteCarloAlgorithm => "Monte Carlo algorithm"
   | .totalTapeLasVegasAlgorithm => "total-tape Las Vegas algorithm"
+  | .everySourceLasVegasAlgorithm => "every-source Las Vegas algorithm"
 
 /-- Stable short label for the origin of a reported cost. -/
 def CostSource.label : CostSource → String
@@ -285,6 +409,148 @@ def WordRAMPublication.summary {width : ℕ} {problem : WordRAM.Problem width} {
   "Warnings: " ++ stringList publication.warnings ++ "\n" ++
   "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
 
+/-- Complete report derived from an actual compiled CFG certificate. -/
+def CompiledAlgorithmPublication.summary
+    {problem : MachineProblem} {bound : ℕ → StructuredRealRAM.Cost}
+    (publication : CompiledAlgorithmPublication problem bound) : String :=
+  let source := publication.certificate.source
+  let target := StructuredRealRAM.CFG.compile source
+  "Claim kind: compiled fixed machine algorithm\n" ++
+  "Machine: " ++ StructuredRealRAM.coreProfile.name ++ "\n" ++
+  "Certificate: " ++ toString publication.certificateName ++ "\n" ++
+  "Problem: " ++ toString publication.problemName ++ "\n" ++
+  "Source: closed first-order labeled CFG\n" ++
+  "Target instruction count: " ++ toString target.length ++ "\n" ++
+  "Target description size: " ++
+    toString (StructuredRealRAM.Program.descriptionSize target) ++ " bits\n" ++
+  "Compilation: shared labels, numeric jumps, and backward edges\n" ++
+  "Cost source: same target halting trace as output\n" ++
+  "Bound: " ++ toString publication.boundName ++ "\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings ++ "\n" ++
+  "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
+
+/-- Complete report derived from an actual sealed-generator family certificate. -/
+def UniformlyGeneratedFamilyPublication.summary
+    {problem : MachineProblem}
+    {generationBound : ℕ → StructuredRealRAM.Cost}
+    {instructionBound descriptionBound : ℕ → ℕ}
+    {timeBound : ℕ → StructuredRealRAM.Cost}
+    (publication : UniformlyGeneratedFamilyPublication problem generationBound instructionBound
+      descriptionBound timeBound) : String :=
+  let generator := publication.certificate.generator
+  "Claim kind: uniformly generated family\n" ++
+  "Generator machine: sealed structured exact-real RAM with unit-cost unbounded Nat bank\n" ++
+  "Certificate: " ++ toString publication.certificateName ++ "\n" ++
+  "Problem: " ++ toString publication.problemName ++ "\n" ++
+  "Generator instruction count: " ++ toString generator.length ++ "\n" ++
+  "Generator description size: " ++
+    toString (StructuredRealRAM.Program.descriptionSize generator) ++ " bits\n" ++
+  "Generator output: canonical binary target-program serialization in charged memory\n" ++
+  "Generation bound: " ++ toString publication.generationBoundName ++ "\n" ++
+  "Target instruction-count bound: " ++ toString publication.instructionBoundName ++ "\n" ++
+  "Target description-size bound: " ++ toString publication.descriptionBoundName ++ "\n" ++
+  "Target execution bound: " ++ toString publication.timeBoundName ++ "\n" ++
+  "Generation cost source: same generator trace as materialized output\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings ++ "\n" ++
+  "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
+
+/-- Complete report derived from an actual hidden-source Monte Carlo certificate. -/
+def MonteCarloAlgorithmPublication.summary
+    {problem : BitRandomizedMachineProblem}
+    {bound : ℕ → StructuredRealRAM.RandomBit.Cost}
+    {failure : problem.Input → Probability}
+    (publication : MonteCarloAlgorithmPublication problem bound failure) : String :=
+  let program := publication.certificate.program
+  "Claim kind: Monte Carlo algorithm\n" ++
+  "Machine: " ++ StructuredRealRAM.RandomBit.profile.name ++ "\n" ++
+  "Certificate: " ++ toString publication.certificateName ++ "\n" ++
+  "Problem: " ++ toString publication.problemName ++ "\n" ++
+  "Program instruction count: " ++ toString program.length ++ "\n" ++
+  "Program description size: " ++
+    toString (StructuredRealRAM.RandomBit.Program.descriptionSize program) ++ " bits\n" ++
+  "Input layout syntax: " ++ problem.inputLayout.syntaxName ++ "\n" ++
+  "Output layout syntax: " ++ problem.outputLayout.syntaxName ++ "\n" ++
+  "Random source: hidden, lengthless iid fair-bit product source\n" ++
+  "Random source cursor observable by program: no\n" ++
+  "Random draw: one closed randBit instruction, charged in the output trace\n" ++
+  "Termination/resource quantification: every source realization\n" ++
+  "Bound (includes random draws): " ++ toString publication.boundName ++ "\n" ++
+  "Failure probability: " ++ toString publication.failureName ++ " (certified at most one)\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings ++ "\n" ++
+  "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
+
+/-- Audit report that prominently distinguishes exact continuous samples from random bits. -/
+def UniformRealMonteCarloAlgorithmPublication.summary
+    {problem : UniformRealRandomizedMachineProblem}
+    {bound : ℕ → StructuredRealRAM.UniformReal.Cost}
+    {failure : problem.Input → Probability}
+    (publication : UniformRealMonteCarloAlgorithmPublication problem bound failure) : String :=
+  let program := publication.certificate.program
+  "Claim kind: exact-uniform-real Monte Carlo algorithm\n" ++
+  "Machine: " ++ StructuredRealRAM.UniformReal.profile.name ++ "\n" ++
+  "Certificate: " ++ toString publication.certificateName ++ "\n" ++
+  "Problem: " ++ toString publication.problemName ++ "\n" ++
+  "Program instruction count: " ++ toString program.length ++ "\n" ++
+  "Program description size: " ++
+    toString (StructuredRealRAM.UniformReal.Program.descriptionSize program) ++ " bits\n" ++
+  "Random source: hidden, lengthless product of exact uniform [0,1] samples\n" ++
+  "Randomness strength: exact continuous primitive; stronger than random-bit RAM\n" ++
+  "Random draw: one closed sampleUniform instruction charged in the output trace\n" ++
+  "Bound (includes random draws): " ++ toString publication.boundName ++ "\n" ++
+  "Failure probability: " ++ toString publication.failureName ++ " (certified at most one)\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings ++ "\n" ++
+  "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
+
+/-- Complete report for the deliberately every-source Las Vegas predicate. -/
+def EverySourceLasVegasAlgorithmPublication.summary
+    {problem : BitRandomizedMachineProblem} {bound : ℕ → ENNReal}
+    (publication : EverySourceLasVegasAlgorithmPublication problem bound) : String :=
+  let program := publication.certificate.program
+  "Claim kind: every-source Las Vegas step algorithm\n" ++
+  "Machine: " ++ StructuredRealRAM.RandomBit.profile.name ++ "\n" ++
+  "Certificate: " ++ toString publication.certificateName ++ "\n" ++
+  "Problem: " ++ toString publication.problemName ++ "\n" ++
+  "Program instruction count: " ++ toString program.length ++ "\n" ++
+  "Program description size: " ++
+    toString (StructuredRealRAM.RandomBit.Program.descriptionSize program) ++ " bits\n" ++
+  "Random source: hidden, lengthless iid fair-bit product source\n" ++
+  "Termination/correctness: every source realization (stronger than almost sure)\n" ++
+  "Expected resource: fixed fetched-instruction projection\n" ++
+  "Bound: " ++ toString publication.boundName ++ "\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings ++ "\n" ++
+  "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
+
+/-- Complete report derived from an actual robust oracle certificate. -/
+def OracleAlgorithmPublication.summary
+    {problem : OracleMachineProblem} {bound : ℕ → StructuredRealRAM.Cost}
+    (publication : OracleAlgorithmPublication problem bound) : String :=
+  let program := publication.certificate.program
+  "Claim kind: robust oracle machine algorithm\n" ++
+  "Machine: " ++ StructuredRealRAM.OracleMachine.profile.name ++ "\n" ++
+  "Certificate: " ++ toString publication.certificateName ++ "\n" ++
+  "Problem: " ++ toString publication.problemName ++ "\n" ++
+  "Oracle interface: " ++ toString publication.interfaceName ++ "\n" ++
+  "Oracle quantification: every admissible responder; one responder fixed per run\n" ++
+  "Oracle non-vacuity: proved by " ++ toString publication.nonvacuityTheorem ++ "\n" ++
+  "Program instruction count: " ++ toString program.length ++ "\n" ++
+  "Program description size: " ++
+    toString (StructuredRealRAM.OracleMachine.Program.descriptionSize program) ++ " bits\n" ++
+  "Input layout syntax: " ++ problem.inputLayout.syntaxName ++ "\n" ++
+  "Output layout syntax: " ++ problem.outputLayout.syntaxName ++ "\n" ++
+  "Query decoding: fixed closed-layout reader\n" ++
+  "Answer transfer: fixed closed-layout overwrite preserving other memory\n" ++
+  "Cost: fetched call, represented query read, named oracle cost, represented answer write\n" ++
+  "Cost/output source: one responder-indexed halting trace\n" ++
+  "Bound: " ++ toString publication.boundName ++ "\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings ++ "\n" ++
+  "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
+
 /-- Publication types accepted by the typed audit command. -/
 class AuditablePublication (Publication : Type u) where
   /-- Render all auditable fields tied to the actual certificate. -/
@@ -301,6 +567,38 @@ instance {problem : IntegerRAM.Problem} {bound : ℕ → ℕ} :
 instance {width : ℕ} {problem : WordRAM.Problem width} {bound : ℕ → ℕ} :
     AuditablePublication (WordRAMPublication problem bound) :=
   ⟨WordRAMPublication.summary⟩
+
+instance {problem : MachineProblem} {bound : ℕ → StructuredRealRAM.Cost} :
+    AuditablePublication (CompiledAlgorithmPublication problem bound) :=
+  ⟨CompiledAlgorithmPublication.summary⟩
+
+instance {problem : MachineProblem}
+    {generationBound : ℕ → StructuredRealRAM.Cost}
+    {instructionBound descriptionBound : ℕ → ℕ}
+    {timeBound : ℕ → StructuredRealRAM.Cost} :
+    AuditablePublication (UniformlyGeneratedFamilyPublication problem generationBound
+      instructionBound descriptionBound timeBound) :=
+  ⟨UniformlyGeneratedFamilyPublication.summary⟩
+
+instance {problem : BitRandomizedMachineProblem}
+    {bound : ℕ → StructuredRealRAM.RandomBit.Cost}
+    {failure : problem.Input → Probability} :
+    AuditablePublication (MonteCarloAlgorithmPublication problem bound failure) :=
+  ⟨MonteCarloAlgorithmPublication.summary⟩
+
+instance {problem : UniformRealRandomizedMachineProblem}
+    {bound : ℕ → StructuredRealRAM.UniformReal.Cost}
+    {failure : problem.Input → Probability} :
+    AuditablePublication (UniformRealMonteCarloAlgorithmPublication problem bound failure) :=
+  ⟨UniformRealMonteCarloAlgorithmPublication.summary⟩
+
+instance {problem : BitRandomizedMachineProblem} {bound : ℕ → ENNReal} :
+    AuditablePublication (EverySourceLasVegasAlgorithmPublication problem bound) :=
+  ⟨EverySourceLasVegasAlgorithmPublication.summary⟩
+
+instance {problem : OracleMachineProblem} {bound : ℕ → StructuredRealRAM.Cost} :
+    AuditablePublication (OracleAlgorithmPublication problem bound) :=
+  ⟨OracleAlgorithmPublication.summary⟩
 
 /-- Produce the report for any supported typed publication. -/
 def auditSummary (publication : Publication) [AuditablePublication Publication] : String :=

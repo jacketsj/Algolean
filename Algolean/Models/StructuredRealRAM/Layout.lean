@@ -318,9 +318,31 @@ noncomputable def RepAt (layout : Layout alpha) (region : Region)
     readReals memory region.realBase encoding.reals.length = encoding.reals ∧
     readNats memory (region.natBase + 2) encoding.nats.length = encoding.nats
 
+/-- Decode exactly the streams whose lengths are stored in a region's canonical headers. -/
+noncomputable def readAt (layout : Layout alpha) (region : Region)
+    (memory : Memory) : Option alpha :=
+  layout.decode
+    ⟨readReals memory region.realBase (memory.natMem region.natBase),
+      readNats memory (region.natBase + 2) (memory.natMem (region.natBase + 1))⟩
+
+/-- A relationally represented value is recovered by the fixed structural reader. -/
+theorem readAt_eq_some (layout : Layout alpha) (region : Region)
+    (value : alpha) (memory : Memory) (rep : layout.RepAt region value memory) :
+    layout.readAt region memory = some value := by
+  simp only [RepAt] at rep
+  simp only [readAt, rep.1, rep.2.1, rep.2.2.1, rep.2.2.2]
+  exact layout.decode_encode value
+
 /-- Place a finite list in otherwise-zero random-access memory. -/
 def place (values : List alpha) [OfNat alpha 0] (base address : ℕ) : alpha :=
   if base ≤ address then values.getD (address - base) 0 else 0
+
+/-- Replace exactly one finite interval of a random-access function. -/
+def overwrite (values : List alpha) [OfNat alpha 0]
+    (base : ℕ) (previous : ℕ → alpha) (address : ℕ) : alpha :=
+  if base ≤ address ∧ address < base + values.length then
+    place values base address
+  else previous address
 
 private theorem read_place (values : List alpha) [OfNat alpha 0] (base : ℕ) :
     List.ofFn (fun index : Fin values.length => place values base (base + index)) = values := by
@@ -331,6 +353,63 @@ private theorem read_place (values : List alpha) [OfNat alpha 0] (base : ℕ) :
     change place values base (base + index) = values[index]
     simp only [place, Nat.le_add_right, ↓reduceIte, Nat.add_sub_cancel_left,
       List.getD_eq_getElem (l := values) (d := 0) rightBound]
+
+private theorem read_overwrite (values : List alpha) [OfNat alpha 0]
+    (base : ℕ) (previous : ℕ → alpha) :
+    List.ofFn (fun index : Fin values.length ↦
+      overwrite values base previous (base + index)) = values := by
+  rw [show List.ofFn (fun index : Fin values.length ↦
+      overwrite values base previous (base + index)) =
+      List.ofFn (fun index : Fin values.length ↦ place values base (base + index)) by
+    congr 1
+    funext index
+    simp [overwrite, index.isLt]]
+  exact read_place values base
+
+/--
+Overwrite one canonical representation while preserving every ordinary memory cell outside its
+two finite regions and preserving every register.  The operation is fixed by `Layout` syntax.
+-/
+noncomputable def writeAt (layout : Layout alpha) (region : Region)
+    (value : alpha) (memory : Memory) : Memory :=
+  let encoding := layout.encode value
+  { realMem := overwrite encoding.reals region.realBase memory.realMem
+    natMem := fun address ↦
+      if address = region.natBase then encoding.reals.length
+      else if address = region.natBase + 1 then encoding.nats.length
+      else overwrite encoding.nats (region.natBase + 2) memory.natMem address
+    natReg := memory.natReg }
+
+/-- The fixed region overwrite canonically represents the written value. -/
+theorem writeAt_rep (layout : Layout alpha) (region : Region)
+    (value : alpha) (memory : Memory) :
+    layout.RepAt region value (layout.writeAt region value memory) := by
+  simp only [RepAt, writeAt]
+  constructor
+  · simp
+  constructor
+  · simp
+  constructor
+  · exact read_overwrite _ _ _
+  · rw [show readNats
+        { realMem := overwrite (layout.encode value).reals region.realBase memory.realMem
+          natMem := fun address ↦
+            if address = region.natBase then (layout.encode value).reals.length
+            else if address = region.natBase + 1 then (layout.encode value).nats.length
+            else overwrite (layout.encode value).nats (region.natBase + 2)
+              memory.natMem address
+          natReg := memory.natReg }
+        (region.natBase + 2) (layout.encode value).nats.length =
+        List.ofFn (fun index : Fin (layout.encode value).nats.length ↦
+          overwrite (layout.encode value).nats (region.natBase + 2) memory.natMem
+            (region.natBase + 2 + index)) by
+          unfold readNats
+          congr 1
+          funext index
+          have h0 : region.natBase + 2 + index ≠ region.natBase := by omega
+          have h1 : region.natBase + 2 + index ≠ region.natBase + 1 := by omega
+          simp [h0, h1]]
+    exact read_overwrite _ _ _
 
 /--
 Canonical zero-initialized memory for a value.  Every cell outside the two finite representation

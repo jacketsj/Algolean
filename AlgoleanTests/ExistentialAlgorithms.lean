@@ -264,7 +264,95 @@ error: Unknown identifier `RandomizedMachineProblem`
 #check MachineProblem.HasUniformlyGeneratedFamily
 #check MachineProblem.HasFamilyRelativeToGeneratorSpecification
 #check BitRandomizedMachineProblem.HasMonteCarloAlgorithm
+#check BitRandomizedMachineProblem.HasEverySourceLasVegasStepAlgorithm
+#check UniformRealRandomizedMachineProblem.HasMonteCarloAlgorithm
+#check ScheduledBitTapeProblem.HasMonteCarloAlgorithmRelativeToBitCountSchedule
+#check ScheduledBitTapeProblem.HasTotalTapeLasVegasStepAlgorithmRelativeToBitCountSchedule
 #print BitRandomizedMachineProblem
+#print StructuredRealRAM.RandomBit.Instruction
+#print StructuredRealRAM.UniformReal.Instruction
+
+/-
+error: Unknown constant
+-/
+#guard_msgs (error, substring := true) in
+#check BitRandomizedMachineProblem.randomBitCount
+
+/-
+error: Unknown constant
+-/
+#guard_msgs (error, substring := true) in
+#check ScheduledBitTapeProblem.HasMonteCarloAlgorithm
+
+/-- The compatibility schedule can encode advice and is therefore explicitly relative. -/
+noncomputable def scheduledAdviceProblem (advice : ℕ → Bool) : ScheduledBitTapeProblem where
+  Input := ℕ
+  Output := Bool
+  inputLayout := .nat
+  outputLayout := .bool
+  outputRegion := ⟨10, 10⟩
+  randomBitCount size := if advice size then 2 else 1
+  pre _ := True
+  post input output := output = advice ((Layout.nat.footprint input).total)
+
+/-- Closed random syntax has a full round-trip finite description. -/
+def drawAndHalt : StructuredRealRAM.RandomBit.Program := [
+  .randBit 0 1,
+  .core (.halt (.literal 0))
+]
+
+example : StructuredRealRAM.RandomBit.Program.decode
+    (StructuredRealRAM.RandomBit.Program.encode drawAndHalt) = some drawAndHalt :=
+  StructuredRealRAM.RandomBit.Program.decode_encode drawAndHalt
+
+example : StructuredRealRAM.RandomBit.Program.Valid drawAndHalt := by
+  intro pc instruction fetch target successor
+  cases pc with
+  | zero =>
+      simp [drawAndHalt] at fetch
+      subst instruction
+      simp [StructuredRealRAM.RandomBit.Instruction.successors] at successor
+      subst target
+      simp [drawAndHalt]
+  | succ pc =>
+      cases pc with
+      | zero =>
+          simp [drawAndHalt] at fetch
+          subst instruction
+          simp [StructuredRealRAM.RandomBit.Instruction.successors,
+            StructuredRealRAM.Instruction.successors] at successor
+      | succ pc => simp [drawAndHalt] at fetch
+
+/-- Canonical regional writes preserve a readable structural representation. -/
+example : Layout.nat.readAt ⟨0, 10⟩
+    (Layout.nat.writeAt ⟨0, 10⟩ 37 Memory.empty) = some 37 :=
+  Layout.readAt_eq_some .nat ⟨0, 10⟩ 37 _ (Layout.writeAt_rep .nat ⟨0, 10⟩ 37 _)
+
+/-- A simple non-vacuous typed oracle contract. -/
+def echoOracleInterface : OracleInterface StructuredRealRAM.Cost where
+  Query := ℕ
+  Answer _ := ℕ
+  queryLayout := .nat
+  answerLayout _ := .nat
+  ValidAnswer query answer := answer = query
+  queryCost _ := 0
+
+def echoOracle : AdmissibleOracle echoOracleInterface where
+  answer query := query
+  correct _ := rfl
+
+example : echoOracleInterface.Nonvacuous := ⟨echoOracle⟩
+
+#check StructuredRealRAM.OracleMachine.Instruction.oracleCall
+#check StructuredRealRAM.OracleMachine.HaltingTrace
+#check OracleMachineProblem.HasOracleAlgorithm
+#print OracleMachineProblem.OracleAlgorithmCertificate
+#check Audit.CompiledAlgorithmPublication
+#check Audit.UniformlyGeneratedFamilyPublication
+#check Audit.MonteCarloAlgorithmPublication
+#check Audit.UniformRealMonteCarloAlgorithmPublication
+#check Audit.EverySourceLasVegasAlgorithmPublication
+#check Audit.OracleAlgorithmPublication
 
 /-- A fixed two-instruction family can nevertheless carry a growing source literal. -/
 def literalAdviceProgram (advice : ℕ) : StructuredRealRAM.Program := [
