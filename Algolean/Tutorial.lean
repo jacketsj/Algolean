@@ -184,12 +184,21 @@ unused memory and registers start at zero, and output is a functional `Layout.Re
 
 Ordinary integer RAM and fixed-width word RAM use
 `IntegerRAM.Problem.HasFixedMachineAlgorithm` and `WordRAM.Problem.HasFixedMachineAlgorithm`.
-Their strongest input route is a canonical native cell array with a length header. A word-RAM
-input proves that the header and payload fit its `2^w` address space. A theorem ranging over word
-widths is a family theorem and should say so; a fixed-width predicate does not silently claim
-uniformity across widths. The sealed random-bit and exact-uniform profiles in this chapter extend
-the structured exact-real RAM, not these native machines; randomized integer- or word-RAM claims
-need separately defined sealed profiles rather than an implicit model transfer.
+Their basic input route is a canonical native cell array with a length header. The stronger
+`WordRAM.StructuredProblem` route stores a closed `WordLayout`; its model-specific canonical
+instances cover words, bounded indices, proof-erased refinements, containers, finite tables, and
+named physical sparse/graph formats. Raw `Nat`, `Int`, `Rat`, and `Real` are not one-word values.
+Every admissible structured input proves that its footprint fits the `2^w` address space.
+
+A theorem ranging over word widths is a family theorem and should say so. The width-uniform API
+uses one finite `UniformProgram` template before every width and input, not an arbitrary function
+from widths to programs. Callable `ProcedureCertificate`s can be proved independently and linked
+into a `RelativeAlgorithmCertificate`: the shared-body linker executes all callee instructions,
+records actual typed calls, and charges their complete same-trace cost. `WordRAM.RandomBit` is a
+separate hidden lengthless iid-bit profile for randomized ordinary Word-RAM claims. Uniform links
+are themselves finite templates, and randomized relative links must refine the same hidden source
+to an ordinary closed randomized program. Exact-uniform real sampling remains an explicitly
+stronger exact-real profile.
 
 Use `MachineProblem.HasNonuniformFamily` only for size-indexed code and provide separate
 instruction-count and full-description-size bounds. Full description size charges natural and

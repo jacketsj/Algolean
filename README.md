@@ -35,6 +35,26 @@ For auditable existential algorithm statements, use the APIs added under
 - `QueryProblem.HasQueryAlgorithm` is the explicit name for the existing `Prog` claim, where pure
   Lean work between emitted queries is uncharged.
 
+For structured ordinary Word-RAM claims, `WordRAM.StructuredProblem` stores closed model-specific
+`WordLayout` syntax. `WordRAM.CanonicalLayout w α` contains only that syntax: raw `Nat`, `Int`,
+`Rat`, and `Real` have no implicit one-word layouts. The library provides explicit bounded words,
+multiword integers/rationals, address-fitting arrays, matrices/tensors, sparse tables, bit sets,
+permutations, partitions, forests, and named edge-list/dart-list/CSR/adjacency-matrix graph formats.
+Conversions between physical formats are charged algorithms. `UniformAlgorithmCertificate` uses
+one width-independent finite template rather than an arbitrary `Nat → Program` family.
+
+`ProcedureContract`, `RelativeAlgorithmCertificate`, and the shared-body Word-RAM linker support
+separately verified subroutines. Abstract calls are finite typed syntax; linking emits one shared
+callee body, executes every callee instruction in the same trace, records structured dynamic calls,
+and charges setup, complete callee cost, dispatch, and cleanup. A completed implementation
+environment yields a concrete `FixedWidthAlgorithmCertificateBy` without repeating the relative
+client correctness proof. Width-uniform dependency linking requires one finite open template and
+one finite linked template whose every specialization is the concrete linker output; it cannot
+choose code independently by width. `WordRAM.RandomBit` separately supplies a hidden lengthless iid
+source for randomized ordinary Word-RAM claims. Randomized relative clients preserve that hidden
+source across deterministic calls and can be discharged only to ordinary closed randomized syntax
+with a same-source trace-refinement proof.
+
 `Algolean.Compiler.CFG` supplies first-order labeled blocks, shared branch joins, backward runtime
 loops, typed register handles, numeric-jump assembly, and an exact emitted-code-size theorem.
 `Algolean.Audit.Algorithm` records and prints every manifest field: layouts, both code-size metrics,
@@ -54,9 +74,9 @@ unbounded signed integer data and natural addresses. `WordRAM` has explicit fixe
 words and addresses. `StructuredRealRAM` has exact reals plus an unbounded unit-cost natural bank,
 totalized real division, truncating natural subtraction, rational source literals, and
 represented-cell input size. These are different complexity models, not interchangeable labels.
-The random-bit and exact-uniform profiles extend `StructuredRealRAM` only; they do not silently
-establish randomized integer-RAM or word-RAM claims. Those require their own explicitly sealed
-native profiles and certificates.
+The structured-real and ordinary Word-RAM random-bit profiles are separate sealed machines;
+neither silently establishes a randomized integer-RAM claim. Exact continuous sampling remains a
+separately named exact-real profile rather than an ordinary word operation.
 
 The checked module [`Algolean.Tutorial`](Algolean/Tutorial.lean) explains how to define a query
 language, prove functional correctness and cost, package a problem statement, choose between
