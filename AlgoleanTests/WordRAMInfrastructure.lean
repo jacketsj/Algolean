@@ -14,6 +14,7 @@ public import Algolean.Complexity.WordRAMRandomized
 public import Algolean.Complexity.WordRAMRandomizedRelative
 public import Algolean.Complexity.WordRAMUniformProcedure
 public import Algolean.Complexity.WordRAMUniformLinking
+public import Algolean.Models.WordRAM.Data.IndexedArray
 public import Algolean.Models.WordRAM.TypedRegion
 public import Algolean.Models.WordRAM.Derive
 
@@ -119,6 +120,12 @@ error: Unknown constant
 #guard_msgs (error, substring := true) in
 #check UniformLinkWitness.ofWidthFamily
 
+/-
+error: Application type mismatch
+-/
+#guard_msgs (error, substring := true) in
+#check IndexedArrayWithLayout (w := 8) (fun value : Bool ↦ if value then 1 else 2)
+
 example (value : Bool) :
     (WordLayout.bool (w := 8)).decode ((WordLayout.bool (w := 8)).encode value) = some value := by
   apply WordLayout.decode_encode
@@ -177,7 +184,14 @@ example (memory : Memory 8)
   AddressPlan.eval_toNat_eq _ _ fits
 
 #check AddressPlan.fixedIndex_trace
+#check AddressPlan.fixedIndex_trace_exact
 #check indirectLookup_trace
+#check ProdRef.sndFixed_rep
+#check ArrayRef.getFixed_rep
+#check ArrayRef.getFixed_runtime_trace_rep
+#check MatrixRef.getFixed_rep_of_encoding
+#check MatrixRef.getFixed_runtime_trace_rep_of_encoding
+#check ParametricProcedureCertificate.forConvention
 
 namespace AdversarialProcedureABI
 
@@ -197,7 +211,6 @@ def overlapping : CallingConvention 8 where
   outputRegion := ⟨0⟩
   scratchOwned _ := False
   registerOwned _ := False
-  callOverhead := 0
   aliasingPolicy := .disjoint
 
 /-- An impossible disjoint ABI is rejected before any code-correctness proof can begin. -/
@@ -241,7 +254,6 @@ def calling : CallingConvention 8 where
   outputRegion := ⟨0⟩
   scratchOwned _ := False
   registerOwned _ := False
-  callOverhead := 0
 
 def before : Memory 8 := ⟨fun _ ↦ 0, fun _ ↦ 0⟩
 
@@ -279,7 +291,6 @@ def scratchCalling : CallingConvention 8 where
   outputRegion := ⟨20⟩
   scratchOwned address := address = 1
   registerOwned _ := False
-  callOverhead := 0
 
 def unitContract : ProcedureContract 8 where
   widthAtLeastTwo := by decide
@@ -318,15 +329,15 @@ def malformedOffsets : WordArray 8 (BitVec 8) × WordArray 8 Bool :=
   (WordArray.mk #[0, 2] (by decide), WordArray.mk #[true] (by decide))
 
 /-- Offset tables must equal actual successive element boundaries, not merely be monotone. -/
-example : ¬ IndexedArray.Valid (w := 8) (fun _ : Bool ↦ 1) malformedOffsets := by
+example : ¬ IndexedArray.Valid (WordLayout.bool (w := 8)) malformedOffsets := by
   intro valid
   have boundary := valid.2.2.1 0 (by
     change 0 < 1
     decide)
-  change (2 : BitVec 8).toNat = (0 : BitVec 8).toNat + 1 at boundary
-  have two : (2 : BitVec 8).toNat = 2 := by decide
-  have zero : (0 : BitVec 8).toNat = 0 := by decide
-  omega
+  have left : (malformedOffsets.1.data.getD 1 0).toNat = 2 := by decide
+  have right : (malformedOffsets.1.data.getD 0 0).toNat = 0 := by decide
+  rw [left, right] at boundary
+  norm_num [WordLayout.footprintWords, WordLayout.encode] at boundary
 
 #layout_audit WordRAM 8 (BitVec 8 × Option Bool)
 
@@ -400,10 +411,13 @@ error: Unknown constant
 #check Linker.link_valid
 #check Linker.link_descriptionSize
 #check CertifiedAccessor._cost
-#check CertifiedAccessor._correct
+#check CertifiedAccessor._lowering
 #check CertifiedAccessor._preservesFrame
 #check RandomizedConcreteLink.certificate
 #check RandomizedConcreteLink.hasAlgorithm
+#check RandomLinker.refine_trace
+#check RandomLinker.certificate
+#check RandomLinker.hasAlgorithm
 
 #print axioms Linker.link_valid
 #print axioms Linker.refine_trace

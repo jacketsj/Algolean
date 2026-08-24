@@ -27,7 +27,6 @@ structure CallingConventionTemplate where
   scratchStart : Nat
   scratchWords : Nat
   ownedRegisters : List Nat
-  callOverhead : Nat
 
 namespace CallingConventionTemplate
 
@@ -38,7 +37,6 @@ def instantiate (template : CallingConventionTemplate) (w : Nat) : CallingConven
     template.scratchStart ≤ address.toNat ∧
       address.toNat < template.scratchStart + template.scratchWords
   registerOwned register := register ∈ template.ownedRegisters
-  callOverhead := template.callOverhead
 
 end CallingConventionTemplate
 
@@ -67,8 +65,6 @@ structure UniformDependencySignature where
   finiteOp : Fintype Op
   decEqOp : DecidableEq Op
   procedure : Op → UniformProcedureContract
-  /-- Width-independent ABI overhead declared before implementations are chosen. -/
-  callOverhead : Op → Nat
 
 attribute [instance] UniformDependencySignature.finiteOp
   UniformDependencySignature.decEqOp
@@ -77,8 +73,6 @@ attribute [instance] UniformDependencySignature.finiteOp
 structure UniformImplementationEnvironment (signature : UniformDependencySignature) where
   implementation : (op : signature.Op) →
     UniformProcedureCertificate (signature.procedure op)
-  callingOverhead_eq : ∀ op,
-    (implementation op).calling.callOverhead = signature.callOverhead op
 
 /-- Specialize the contracts and declared bounds without consulting an implementation. -/
 def UniformDependencySignature.atWidth (signature : UniformDependencySignature) (w : Nat) :
@@ -88,15 +82,11 @@ def UniformDependencySignature.atWidth (signature : UniformDependencySignature) 
   decEqOp := signature.decEqOp
   contract op := (signature.procedure op).contract w
   bound op := (signature.procedure op).bound w
-  callOverhead := signature.callOverhead
 
 /-- Specialize a width-uniform environment without choosing new width-indexed code. -/
 def UniformImplementationEnvironment.atWidth
     (environment : UniformImplementationEnvironment signature) (w : Nat) :
     ImplementationEnvironment (signature.atWidth w) where
   implementation op := (environment.implementation op).certificateAt w
-  callingOverhead_eq op := by
-    rw [environment.implementation op |>.calling_eq w]
-    exact environment.callingOverhead_eq op
 
 end Algolean.Algorithms.WordRAM

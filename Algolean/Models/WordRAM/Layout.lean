@@ -641,7 +641,8 @@ attribute [instance 1100] FixedFootprint.toCanonicalLayout
 
 namespace FixedFootprint
 
-private theorem encodeList_length
+/-- A fixed-footprint layout serializes a list as exactly `length * stride` words. -/
+theorem encodeList_length
     (layout : WordLayout w alpha)
     (words : Nat)
     (fixed : ∀ value : alpha, layout.footprintWords value = words)

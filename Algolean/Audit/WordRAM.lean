@@ -12,6 +12,7 @@ public import Algolean.Complexity.WordRAMRelative
 public import Algolean.Complexity.WordRAMLinking
 public import Algolean.Complexity.WordRAMRandomized
 public import Algolean.Complexity.WordRAMRandomizedRelative
+public import Algolean.Compiler.WordRAMRandomLinkerCorrectness
 public import Algolean.Complexity.WordRAMUniformProcedure
 public import Algolean.Complexity.WordRAMUniformLinking
 public import Algolean.Models.WordRAM.TypedRegion
@@ -115,6 +116,35 @@ structure RandomRelativePublication (signature : DependencySignature w)
   drawBoundName : Lean.Name
   failureName : Lean.Name
   correctnessTheorem : Lean.Name
+
+/-- Typed publication derived from the automatic same-source randomized linker. -/
+structure RandomLinkedPublication (signature : DependencySignature w)
+    (problem : StructuredProblem w) (stepBound drawBound overheadBound : problem.Input → Nat)
+    (failure : problem.Input → Probability) where
+  client : RandomRelativeAlgorithmCertificate signature problem stepBound drawBound failure
+  implementations : ImplementationEnvironment signature
+  configuration : Linker.Configuration w
+  assumptions : RandomLinker.LinkingAssumptions client implementations configuration overheadBound
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  stepBoundName : Lean.Name
+  drawBoundName : Lean.Name
+  overheadBoundName : Lean.Name
+  failureName : Lean.Name
+  correctnessTheorem : Lean.Name
+  warnings : List String := []
+
+/-- The actual unconditional certificate is computed by the verified linker. -/
+noncomputable def RandomLinkedPublication.certificate
+    {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
+    {stepBound drawBound overheadBound : problem.Input → Nat}
+    {failure : problem.Input → Probability}
+    (publication : RandomLinkedPublication signature problem stepBound drawBound overheadBound
+      failure) :
+    problem.RandomizedAlgorithmCertificate
+      (RandomLinker.linkedStepBound stepBound overheadBound) drawBound failure :=
+  RandomLinker.certificate publication.client publication.implementations
+    publication.configuration overheadBound publication.assumptions
 
 /-- Typed publication artifact for an unresolved contract-relative algorithm. -/
 structure RelativePublication (signature : DependencySignature w)
@@ -259,12 +289,41 @@ def RandomRelativePublication.summary {w : Nat} {signature : DependencySignature
   "Randomness: hidden lengthless iid fair-bit source\n" ++
   "Random-source cursor across calls: preserved and unobservable\n" ++
   "Dependency operations: " ++ toString (Fintype.card signature.Op) ++ " unresolved\n" ++
-  "Concrete discharge requirement: ordinary closed RandomBit.Program plus " ++
-    "same-source refinement\n" ++
+  "Concrete discharge: automatic shared-body same-source linker after certified implementations\n" ++
   "Step bound: " ++ toString publication.stepBoundName ++ "\n" ++
   "Draw bound: " ++ toString publication.drawBoundName ++ "\n" ++
   "Failure probability: " ++ toString publication.failureName ++ " (typed ≤ 1)\n" ++
   "Correctness theorem: " ++ toString publication.correctnessTheorem
+
+/-- Linked randomized audits expose the generated finite syntax and derived call overhead. -/
+noncomputable def RandomLinkedPublication.summary
+    {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
+    {stepBound drawBound overheadBound : problem.Input → Nat}
+    {failure : problem.Input → Probability}
+    (publication : RandomLinkedPublication signature problem stepBound drawBound overheadBound
+      failure) : String :=
+  let certificate := publication.certificate
+  "Claim kind: concrete linked randomized fixed-width Word-RAM algorithm\n" ++
+  "Linked status: fully resolved, unconditional\n" ++
+  "Certificate: " ++ toString publication.certificateName ++ "\n" ++
+  "Problem: " ++ toString publication.problemName ++ "\n" ++
+  "Word width: " ++ toString w ++ "\n" ++
+  "Randomness: hidden lengthless iid fair-bit source\n" ++
+  "Random-source length observable: no\n" ++
+  "Random cursor across deterministic calls: exactly preserved\n" ++
+  "Dependency operations: " ++ toString (Fintype.card signature.Op) ++ " resolved\n" ++
+  "Body sharing: one relocated deterministic body per operation\n" ++
+  "Call overhead: derived from emitted setup/dispatcher/cleanup syntax\n" ++
+  "Program instruction count: " ++ toString certificate.program.length ++ "\n" ++
+  "Program description size: " ++ toString certificate.program.descriptionSize ++ " bits\n" ++
+  "Step bound: " ++ toString publication.stepBoundName ++ " plus " ++
+    toString publication.overheadBoundName ++ "\n" ++
+  "Random-draw bound: " ++ toString publication.drawBoundName ++ "\n" ++
+  "Failure probability: " ++ toString publication.failureName ++ " (typed ≤ 1)\n" ++
+  "Cost/output/draw source: one concrete randomized HaltingTrace\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings ++ "\n" ++
+  "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
 
 /-- Relative audits are deliberately prominent and cannot masquerade as linked certificates. -/
 def RelativePublication.summary {w : ℕ} {signature : DependencySignature w}
@@ -344,7 +403,8 @@ def ProcedurePublication.summary {w : Nat} {contract : ProcedureContract w}
   "Entry point: " ++ toString certificate.module.entry ++ "\n" ++
   "Instruction count: " ++ toString publication.instructionCount ++ "\n" ++
   "Description size: " ++ toString publication.descriptionSize ++ " bits\n" ++
-  "Call overhead: " ++ toString certificate.calling.callOverhead ++ "\n" ++
+  "Procedure bound: complete callee-body cost\n" ++
+  "Linker overhead: derived from emitted setup/dispatcher/cleanup syntax\n" ++
   "Frame safety: certified outside the actual input/output and owned scratch/registers\n" ++
   "Owned scratch after return: permitted to change\n" ++
   "Bound: " ++ toString publication.boundName ++ "\n" ++
@@ -398,6 +458,15 @@ instance {signature : WordRAM.DependencySignature w} {problem : WordRAM.Structur
     AuditablePublication
       (WordRAM.Audit.RandomRelativePublication signature problem stepBound drawBound failure) :=
   ⟨WordRAM.Audit.RandomRelativePublication.summary⟩
+
+noncomputable instance {signature : WordRAM.DependencySignature w}
+    {problem : WordRAM.StructuredProblem w}
+    {stepBound drawBound overheadBound : problem.Input → Nat}
+    {failure : problem.Input → WordRAM.Probability} :
+    AuditablePublication
+      (WordRAM.Audit.RandomLinkedPublication signature problem stepBound drawBound overheadBound
+        failure) :=
+  ⟨WordRAM.Audit.RandomLinkedPublication.summary⟩
 
 noncomputable instance {signature : WordRAM.DependencySignature w}
     {problem : WordRAM.StructuredProblem w}

@@ -143,6 +143,54 @@ inductive RawHaltingTrace (program : Program w) (source : Source) :
       (tail : RawHaltingTrace program source nextConfiguration memory result draws tailCost) :
       RawHaltingTrace program source configuration memory result draws (headCost + tailCost)
 
+/-- A running transition reports exactly the change of the hidden source cursor. -/
+theorem step_running_cursor
+    (observed : step program source initial = ⟨.running next, cost⟩) :
+    cost.randomDraws + initial.randomCursor = next.randomCursor := by
+  simp only [step] at observed
+  split at observed
+  · cases observed
+  · rename_i instruction fetch
+    cases instruction with
+    | core instruction =>
+        simp only [execute] at observed
+        split at observed <;> cases observed
+        simp [Cost.core]
+    | randBit destination successor =>
+        simp only [execute] at observed
+        cases observed
+        simp [Cost.draw, Nat.add_comm]
+
+/-- A halting transition reports the final hidden-source cursor. -/
+theorem step_halted_cursor
+    (observed : step program source initial = ⟨.halted final result draws, cost⟩) :
+    cost.randomDraws + initial.randomCursor = draws := by
+  simp only [step] at observed
+  split at observed
+  · cases observed
+  · rename_i instruction fetch
+    cases instruction with
+    | core instruction =>
+        simp only [execute] at observed
+        split at observed <;> cases observed
+        simp [Cost.core]
+    | randBit destination successor =>
+        simp only [execute] at observed
+        cases observed
+
+/-- Raw traces determine their random-draw count; publication only packages it. -/
+theorem RawHaltingTrace.cursorAccounting
+    (trace : RawHaltingTrace program source initial final result draws cost) :
+    cost.randomDraws + initial.randomCursor = draws := by
+  induction trace with
+  | halt observed => exact step_halted_cursor observed
+  | next observed tail induction =>
+      have head := step_running_cursor observed
+      rename_i configuration nextConfiguration final result draws headCost tailCost
+      change (headCost.randomDraws + tailCost.randomDraws) +
+        configuration.randomCursor = draws
+      omega
+
 /--
 Published traces package the raw operational derivation with its cursor-accounting invariant.
 The invariant is proof data only; the cursor remains absent from program-visible memory.

@@ -129,7 +129,10 @@ def DirectedEdgeList.Valid (payload : Nat × Array Nat × Array Nat × Array edg
 abbrev DirectedEdgeList (edgeData : Type) := Tagged .directedEdgeList
   {payload : Nat × Array Nat × Array Nat × Array edgeData // DirectedEdgeList.Valid payload}
 
-/-- Undirected dart-list physical format with an involutive reverse map. -/
+/--
+Undirected dart-list physical format with a bounded involutive reverse map that swaps endpoints.
+The payload on reverse darts remains unconstrained so downstream contracts may choose its meaning.
+-/
 def UndirectedDartList.Valid
     (payload : Nat × Array Nat × Array Nat × Array Nat × Array dartData) : Prop :=
   payload.2.1.size = payload.2.2.1.size ∧
@@ -137,8 +140,12 @@ def UndirectedDartList.Valid
     payload.2.2.2.1.size = payload.2.2.2.2.size ∧
     (∀ endpoint ∈ payload.2.1, endpoint < payload.1) ∧
     (∀ endpoint ∈ payload.2.2.1, endpoint < payload.1) ∧
+    (∀ reverse ∈ payload.2.2.2.1, reverse < payload.2.2.2.1.size) ∧
     ∀ dart, dart < payload.2.2.2.1.size →
-      payload.2.2.2.1[payload.2.2.2.1[dart]!]! = dart
+      let reverse := payload.2.2.2.1[dart]!
+      payload.2.2.2.1[reverse]! = dart ∧
+      payload.2.1[reverse]! = payload.2.2.1[dart]! ∧
+      payload.2.2.1[reverse]! = payload.2.1[dart]!
 
 abbrev UndirectedDartList (dartData : Type) := Tagged .undirectedDartList
   {payload : Nat × Array Nat × Array Nat × Array Nat × Array dartData //

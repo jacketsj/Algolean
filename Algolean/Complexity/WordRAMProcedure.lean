@@ -99,8 +99,6 @@ structure CallingConvention (w : ℕ) where
   scratchOwned : BitVec w → Prop
   /-- Address registers the callee may modify. -/
   registerOwned : ℕ → Prop
-  /-- Constant charged setup/dispatch/return overhead. -/
-  callOverhead : ℕ
   /-- Whether output storage must be separate or may intentionally alias the input. -/
   aliasingPolicy : AliasingPolicy := .disjoint
 
@@ -183,7 +181,7 @@ structure ProcedureCertificate (contract : ProcedureContract w)
       contract.inputLayout.RepAt calling.inputRegion input initial →
       ∃ run : ProcedureRun module initial,
         contract.outputLayout.RepAt calling.outputRegion (output input) run.final ∧
-        run.cost ≤ bound input + calling.callOverhead ∧
+        run.cost ≤ bound input ∧
         PreservesFrame contract calling input (output input) initial run.final
 
 /-- Stronger convention restoring scratch and owned registers before return. -/
@@ -193,8 +191,50 @@ structure RestoringProcedureCertificate (contract : ProcedureContract w)
     contract.inputLayout.RepAt calling.inputRegion input initial →
     ∃ run : ProcedureRun module initial,
       contract.outputLayout.RepAt calling.outputRegion (output input) run.final ∧
-      run.cost ≤ bound input + calling.callOverhead ∧
+      run.cost ≤ bound input ∧
       run.final = contract.outputLayout.writeAt calling.outputRegion (output input) initial
+
+/--
+One finite module proved callable at every ABI satisfying the closed contract.  This is the safe
+base-region-parametric interface: region choice is quantified in the proof, not performed by a
+host callback at execution time.
+-/
+structure ParametricProcedureCertificate (contract : ProcedureContract w)
+    (bound : ProcedureBound contract) where
+  module : ProcedureModule w
+  valid : module.Valid
+  output : contract.Input → contract.Output
+  outputCorrect : ∀ input, contract.pre input → contract.post input (output input)
+  correct : ∀ calling : CallingConvention w, calling.Realizes contract →
+    ∀ input, ∀ _validInput : contract.pre input, ∀ initial : Memory w,
+      contract.inputLayout.RepAt calling.inputRegion input initial →
+      ∃ run : ProcedureRun module initial,
+        contract.outputLayout.RepAt calling.outputRegion (output input) run.final ∧
+        run.cost ≤ bound input ∧
+        PreservesFrame contract calling input (output input) initial run.final
+
+namespace ParametricProcedureCertificate
+
+/-- Specialize a parametric proof to one realizable concrete ABI without changing its code. -/
+def forConvention {w : Nat} {contract : ProcedureContract w}
+    {bound : ProcedureBound contract}
+    (certificate : ParametricProcedureCertificate contract bound)
+    (calling : CallingConvention w)
+    (realizes : CallingConvention.Realizes (w := w) contract calling) :
+    ProcedureCertificate contract bound where
+  module := certificate.module
+  calling := calling
+  callingRealizes := realizes
+  valid := certificate.valid
+  output := certificate.output
+  outputCorrect := certificate.outputCorrect
+  correct := certificate.correct calling realizes
+
+end ParametricProcedureCertificate
+
+/-- A representation adapter is ordinary charged callable code, never a free layout conversion. -/
+abbrev RepresentationAdapterCertificate (contract : ProcedureContract w)
+    (bound : ProcedureBound contract) := ProcedureCertificate contract bound
 
 /-- Existence of concrete callable code; retained separately from the inspectable certificate. -/
 def HasProcedure (contract : ProcedureContract w) (bound : ProcedureBound contract) : Prop :=
@@ -262,7 +302,7 @@ def weakenBound (certificate : ProcedureCertificate contract oldBound)
     rcases certificate.correct input validInput initial represented with
       ⟨run, outputRep, cost, frame⟩
     refine ⟨run, outputRep, ?_, frame⟩
-    exact cost.trans (Nat.add_le_add_right (larger input) certificate.calling.callOverhead)
+    exact cost.trans (larger input)
 
 end ProcedureCertificate
 

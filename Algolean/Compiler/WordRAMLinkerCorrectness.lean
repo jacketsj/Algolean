@@ -73,9 +73,10 @@ structure Compatibility {w : Nat} {signature : DependencySignature w}
       outputRegion = (environment.implementation op).calling.outputRegion
 
 /-- Exact implementation-specific overhead attached to one dynamic relative call. -/
-def concreteCallOverhead (environment : ImplementationEnvironment signature)
+@[nolint unusedArguments]
+def concreteCallOverhead (_environment : ImplementationEnvironment signature)
     (call : DependencyCallRecord signature) : Nat :=
-  (environment.implementation call.op).calling.callOverhead + call.callSite + 2
+  call.callSite + 2
 
 def totalConcreteCallOverhead (environment : ImplementationEnvironment signature)
     (calls : List (DependencyCallRecord signature)) : Nat :=
@@ -509,8 +510,6 @@ theorem refine_call {w : Nat} {signature : DependencySignature w}
   rw [finalMemory] at allSteps
   refine ⟨_, _, allSteps, ?_⟩
   simp only [concreteCallOverhead]
-  change run.cost ≤ signature.bound op input +
-    (environment.implementation op).calling.callOverhead at costBound
   omega
 
 /--

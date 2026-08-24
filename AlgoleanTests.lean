@@ -11,3 +11,7 @@ public import AlgoleanTests.NaivePatternSearchExamples
 public import AlgoleanTests.ProgExamples
 public import AlgoleanTests.QueryExamples
 public import AlgoleanTests.RealRAMExamples
+public import AlgoleanTests.StructuredRealRAMInfrastructure
+public import AlgoleanTests.StructuredRealRAMProcedureComposition
+public import AlgoleanTests.WordRAMInfrastructure
+public import AlgoleanTests.WordRAMProcedureComposition

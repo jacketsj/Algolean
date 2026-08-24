@@ -58,7 +58,6 @@ structure CallingConvention where
   scratchRealOwned : Nat → Prop
   scratchNatOwned : Nat → Prop
   natRegisterOwned : Nat → Prop
-  callOverhead : Cost
   /-- Whether output storage must be separate or may intentionally alias the input. -/
   aliasingPolicy : AliasingPolicy := .disjoint
 
@@ -143,6 +142,40 @@ structure RestoringProcedureCertificate (contract : ProcedureContract)
       contract.outputLayout.RepAt calling.outputRegion (output input) run.final ∧
       run.cost ≤ bound input ∧
       run.final = contract.outputLayout.writeAt calling.outputRegion (output input) initial
+
+/-- One sealed module proved callable at every concrete ABI realizing the contract. -/
+structure ParametricProcedureCertificate (contract : ProcedureContract)
+    (bound : ProcedureBound contract) where
+  module : ProcedureModule
+  valid : module.Valid
+  output : contract.Input → contract.Output
+  outputCorrect : ∀ input, contract.pre input → contract.post input (output input)
+  correct : ∀ calling : CallingConvention, calling.Realizes contract →
+    ∀ input, ∀ _validInput : contract.pre input, ∀ initial : Memory,
+      contract.inputLayout.RepAt calling.inputRegion input initial →
+      ∃ run : ProcedureRun module initial,
+        contract.outputLayout.RepAt calling.outputRegion (output input) run.final ∧
+        run.cost ≤ bound input ∧
+        PreservesFrame contract calling input (output input) initial run.final
+
+namespace ParametricProcedureCertificate
+
+def forConvention (certificate : ParametricProcedureCertificate contract bound)
+    (calling : CallingConvention) (realizes : calling.Realizes contract) :
+    ProcedureCertificate contract bound where
+  module := certificate.module
+  calling := calling
+  callingRealizes := realizes
+  valid := certificate.valid
+  output := certificate.output
+  outputCorrect := certificate.outputCorrect
+  correct := certificate.correct calling realizes
+
+end ParametricProcedureCertificate
+
+/-- A structural representation adapter is an ordinary charged procedure certificate. -/
+abbrev RepresentationAdapterCertificate (contract : ProcedureContract)
+    (bound : ProcedureBound contract) := ProcedureCertificate contract bound
 
 def HasProcedure (contract : ProcedureContract) (bound : ProcedureBound contract) : Prop :=
   Nonempty (ProcedureCertificate contract bound)

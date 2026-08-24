@@ -30,8 +30,6 @@ structure DependencySignature (w : ℕ) where
   decEqOp : DecidableEq Op
   contract : Op → ProcedureContract w
   bound : (op : Op) → ProcedureBound (contract op)
-  /-- Fixed call/return ABI overhead; implementations may not select another value. -/
-  callOverhead : Op → Nat
 
 attribute [instance] DependencySignature.finiteOp DependencySignature.decEqOp
 
@@ -225,8 +223,6 @@ structure RelativeAlgorithmCertificate (signature : DependencySignature w)
 structure ImplementationEnvironment (signature : DependencySignature w) where
   implementation : (op : signature.Op) →
     RestoringProcedureCertificate (signature.contract op) (signature.bound op)
-  callingOverhead_eq : ∀ op,
-    (implementation op).calling.callOverhead = signature.callOverhead op
 
 namespace ImplementationEnvironment
 

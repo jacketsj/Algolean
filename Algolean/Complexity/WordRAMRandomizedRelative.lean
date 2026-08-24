@@ -53,11 +53,11 @@ inductive RandomOpenStep (signature : DependencySignature w)
     (source : RandomBit.Source) :
     RandomBit.Configuration w → RandomBit.StepResult w → RandomBit.Cost →
       Option (DependencyCallRecord signature) → Prop where
-  | machine {configuration instruction observation}
+  | machine {configuration instruction outcome cost}
       (fetch : program[configuration.pc]? = some (.machine instruction))
-      (observed : RandomBit.execute source instruction configuration = observation) :
+      (observed : RandomBit.execute source instruction configuration = ⟨outcome, cost⟩) :
       RandomOpenStep signature responder program source configuration
-        observation.outcome observation.cost none
+        outcome cost none
   | call {configuration op inputRegion outputRegion next input}
       (fetch : program[configuration.pc]? = some (.call op inputRegion outputRegion next))
       (inputRep : (signature.contract op).inputLayout.RepAt
@@ -97,6 +97,46 @@ inductive RandomOpenHaltingTrace (signature : DependencySignature w)
         memory result draws tailCost calls) :
       RandomOpenHaltingTrace signature responder program source configuration memory result draws
         (headCost + tailCost) (headCall.toList ++ calls)
+
+/-- Each recorded randomized relative call contributes its explicit dispatch transition. -/
+theorem RandomOpenHaltingTrace.calls_length_le_steps
+    (trace : RandomOpenHaltingTrace signature responder program source initial final result draws
+      cost calls) :
+    calls.length ≤ cost.steps := by
+  induction trace with
+  | halt step =>
+      cases step with
+      | machine => simp
+  | @next configuration nextConfiguration memory result draws headCost tailCost headCall calls
+      step tail ih =>
+      cases step with
+      | machine =>
+          simp only [Option.toList_none, List.nil_append]
+          change calls.length ≤ headCost.steps + tailCost.steps
+          omega
+      | call fetch inputRep validInput =>
+          simp only [Option.toList_some, List.singleton_append, List.length_cons]
+          change calls.length + 1 ≤ signature.bound _ _ + 1 + tailCost.steps
+          omega
+
+/-- Every randomized dynamic call record names an actual in-range call instruction. -/
+theorem RandomOpenHaltingTrace.callSite_lt
+    (trace : RandomOpenHaltingTrace signature responder program source initial final result draws
+      cost calls)
+    (call : DependencyCallRecord signature) (member : call ∈ calls) :
+    call.callSite < program.length := by
+  induction trace with
+  | halt step =>
+      cases step with
+      | machine => simp at member
+  | next step tail ih =>
+      cases step with
+      | machine => simpa using ih member
+      | call fetch inputRep validInput =>
+          simp only [Option.toList_some, List.singleton_append, List.mem_cons] at member
+          rcases member with rfl | member
+          · exact List.getElem?_eq_some_iff.mp fetch |>.1
+          · exact ih member
 
 /-- Relative source event, including exact call records and both same-trace resource coordinates. -/
 def RandomRelativeSuccessEvent (signature : DependencySignature w)

@@ -55,12 +55,15 @@ def head (graph : DirectedEdgeList w edgeData) : WordArray w (BitVec w) := graph
 def data (graph : DirectedEdgeList w edgeData) : WordArray w edgeData := graph.payload.2.2.2.2
 
 /-- Proof-layer semantics of an already materialized directed edge list. -/
-def Represents (graph : DirectedEdgeList w edgeData)
+def EveryStoredEdgeSatisfies (graph : DirectedEdgeList w edgeData)
     (edge : Nat → Nat → edgeData → Prop) : Prop :=
   ∀ index, index < graph.edgeCount.toNat →
     ∃ datum, graph.data.data[index]? = some datum ∧
       edge (graph.tail.data.getD index 0).toNat
         (graph.head.data.getD index 0).toNat datum
+
+/-- Compatibility alias; the explicit name records that this is a one-way soundness relation. -/
+abbrev Represents := @EveryStoredEdgeSatisfies
 
 end DirectedEdgeList
 
@@ -77,13 +80,16 @@ def data (graph : UndirectedDartList w dartData) : WordArray w dartData :=
   graph.payload.2.2.2.2.2
 
 /-- Relation to a mathlib simple graph; no enumeration or conversion is selected implicitly. -/
-def Represents (graph : UndirectedDartList w dartData)
+def RepresentsExactly (graph : UndirectedDartList w dartData)
     (abstract : SimpleGraph (Fin graph.vertexCount.toNat)) : Prop :=
   ∀ left right,
     abstract.Adj left right ↔
       ∃ dart, dart < graph.dartCount.toNat ∧
         (graph.tail.data.getD dart 0).toNat = left ∧
         (graph.head.data.getD dart 0).toNat = right
+
+/-- Compatibility alias for the exact bidirectional representation relation. -/
+abbrev Represents := @RepresentsExactly
 
 end UndirectedDartList
 
@@ -102,12 +108,15 @@ def neighborEnd (graph : CSRGraph w edgeData) (vertex : Nat) : Nat :=
   (graph.offsets.data.getD (vertex + 1) 0).toNat
 
 /-- Proof-layer semantics of an already materialized CSR representation. -/
-def Represents (graph : CSRGraph w edgeData)
+def EveryStoredEdgeSatisfies (graph : CSRGraph w edgeData)
     (edge : Nat → Nat → edgeData → Prop) : Prop :=
   ∀ vertex, vertex < graph.vertexCount.toNat →
     ∀ index, graph.neighborStart vertex ≤ index → index < graph.neighborEnd vertex →
       ∃ datum, graph.data.data[index]? = some datum ∧
         edge vertex (graph.destination.data.getD index 0).toNat datum
+
+/-- Compatibility alias; the explicit name records that this is a one-way soundness relation. -/
+abbrev Represents := @EveryStoredEdgeSatisfies
 
 end CSRGraph
 
@@ -119,12 +128,15 @@ def present (graph : AdjacencyMatrixGraph w edgeData) : DenseMatrix w Bool := gr
 def data (graph : AdjacencyMatrixGraph w edgeData) : DenseMatrix w edgeData := graph.payload.2.2
 
 /-- Relation to a mathlib simple graph using the documented row-major presence matrix. -/
-def Represents (graph : AdjacencyMatrixGraph w edgeData)
+def RepresentsExactly (graph : AdjacencyMatrixGraph w edgeData)
     (abstract : SimpleGraph (Fin graph.vertexCount.toNat)) : Prop :=
   ∀ left right,
     abstract.Adj left right ↔
       graph.present.data.data.getD
         (left.val * graph.vertexCount.toNat + right.val) false
+
+/-- Compatibility alias for the exact bidirectional representation relation. -/
+abbrev Represents := @RepresentsExactly
 
 end AdjacencyMatrixGraph
 

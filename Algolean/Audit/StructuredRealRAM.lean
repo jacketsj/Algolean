@@ -8,6 +8,8 @@ module
 
 public import Algolean.Audit.Algorithm
 public import Algolean.Compiler.StructuredRealRAMLinkerCorrectness
+public import Algolean.Compiler.StructuredRealRAMEmbedding
+public import Algolean.Compiler.StructuredRealRAMRandomLinkerCorrectness
 
 /-! # Typed audits for the two-bank structured exact-real/natural RAM -/
 
@@ -43,6 +45,35 @@ def uniformRealProfileAudit : ProfileAudit where
   extensions := "sealed sampleUniform only; strictly stronger than random bits"
   oracles := "none"
 
+/-- Typed external-oracle profile; the concrete interface is part of the certificate type. -/
+def oracleProfileAudit : ProfileAudit where
+  name := OracleMachine.profile.name
+  randomness := "none"
+  extensions := "sealed oracleCall only; no arbitrary memory transformer"
+  oracles := "typed interface fixed before the program; non-vacuity required by publication"
+
+/-- The closed profile index itself determines all audit text. -/
+def sealedProfileAudit (profile : SealedProfile) : ProfileAudit where
+  name := profile.summary
+  randomness := profile.randomness
+  extensions := match profile with
+    | .deterministic => "none (closed core instruction syntax)"
+    | .hiddenFairBits => "sealed randBit only"
+    | .hiddenUniformReal => "sealed sampleUniform only; strictly stronger than random bits"
+  oracles := "none; typed external-oracle claims use a separate relative API"
+
+/-- Closed disclosure of the two certified core-profile embeddings. -/
+def coreEmbeddingSummary (target : SealedProfile) : String :=
+  match target with
+  | .deterministic =>
+      "Embedding: identity on deterministic structured exact-real/natural syntax"
+  | .hiddenFairBits =>
+      "Embedding: deterministic core -> hidden fair bits via fixed `.core`; " ++
+        "trace/cost/cursor/description-size theorems certified"
+  | .hiddenUniformReal =>
+      "Embedding: deterministic core -> hidden exact uniform reals via fixed `.core`; " ++
+        "trace/cost/cursor/description-size theorems certified"
+
 /-- Render every convention affecting computational strength. -/
 def ProfileAudit.summary (profile : ProfileAudit) : String :=
   "Machine: " ++ profile.name ++ "\n" ++
@@ -52,7 +83,7 @@ def ProfileAudit.summary (profile : ProfileAudit) : String :=
   "Input size: represented real cells plus natural cells; not Nat bit length\n" ++
   "Real arithmetic/comparison: exact; source literals are rational\n" ++
   "Division by zero: Lean totalized field division\n" ++
-  "Optional floor/transcendentals: absent from core; only separately named stronger profiles\n" ++
+  "Optional floor/transcendentals: absent from machine-time profiles (query-only effects are separate)\n" ++
   "Real-to-discrete conversion: absent\n" ++
   "Halt counted: yes\n" ++
   "Randomness: " ++ profile.randomness ++ "\n" ++
@@ -134,6 +165,44 @@ structure RelativePublication (signature : DependencySignature)
   boundName : Lean.Name
   correctnessTheorem : Lean.Name
 
+/-- Unresolved randomized client with deterministic typed dependencies. -/
+structure RandomRelativePublication (signature : DependencySignature)
+    (problem : BitRandomizedMachineProblem) (bound : Nat → RandomBit.Cost)
+    (failure : problem.Input → Probability) where
+  certificate : RandomRelativeAlgorithmCertificate signature problem bound failure
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  boundName : Lean.Name
+  failureName : Lean.Name
+  correctnessTheorem : Lean.Name
+
+/-- Fully resolved randomized publication derived from the automatic same-source linker. -/
+structure RandomLinkedPublication (signature : DependencySignature)
+    (problem : BitRandomizedMachineProblem)
+    (relativeBound linkedBound : Nat → RandomBit.Cost)
+    (failure : problem.Input → Probability) where
+  client : RandomRelativeAlgorithmCertificate signature problem relativeBound failure
+  implementations : ImplementationEnvironment signature
+  configuration : Linker.Configuration
+  assumptions : RandomLinker.LinkingAssumptions client implementations configuration linkedBound
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  relativeBoundName : Lean.Name
+  linkedBoundName : Lean.Name
+  failureName : Lean.Name
+  correctnessTheorem : Lean.Name
+  warnings : List String := []
+
+/-- The auditable concrete certificate is produced by the verified operational simulation. -/
+noncomputable def RandomLinkedPublication.certificate
+    {signature : DependencySignature} {problem : BitRandomizedMachineProblem}
+    {relativeBound linkedBound : Nat → RandomBit.Cost}
+    {failure : problem.Input → Probability}
+    (publication : RandomLinkedPublication signature problem relativeBound linkedBound failure) :
+    BitRandomizedMachineProblem.MonteCarloAlgorithmCertificate problem linkedBound failure :=
+  RandomLinker.certificate publication.client publication.implementations
+    publication.configuration linkedBound publication.assumptions
+
 /-- Fully resolved shared-body linked publication. -/
 structure LinkedPublication (signature : DependencySignature)
     (problem : MachineProblem) (relativeBound linkedBound : problem.Input → Cost) where
@@ -205,6 +274,54 @@ def RelativePublication.summary (publication : RelativePublication signature pro
   "Bound: " ++ toString publication.boundName ++ "\n" ++
   "Correctness theorem: " ++ toString publication.correctnessTheorem
 
+/-- Relative randomized certificates remain visibly non-publication claims. -/
+def RandomRelativePublication.summary
+    {signature : DependencySignature} {problem : BitRandomizedMachineProblem}
+    {bound : Nat → RandomBit.Cost} {failure : problem.Input → Probability}
+    (publication : RandomRelativePublication signature problem bound failure) : String :=
+  "RELATIVE RANDOMIZED ALGORITHM CERTIFICATE\n" ++
+  "THIS IS NOT YET AN UNCONDITIONAL STRUCTURED REAL-RAM ALGORITHM\n" ++
+  "Certificate: " ++ toString publication.certificateName ++ "\n" ++
+  "Problem: " ++ toString publication.problemName ++ "\n" ++
+  "Machine profile: " ++ RandomBit.profile.name ++ "\n" ++
+  "Random-source length observable: no\n" ++
+  "Random cursor across dependency calls: preserved and unobservable\n" ++
+  "Unresolved deterministic operations: " ++ toString (Fintype.card signature.Op) ++ "\n" ++
+  "Concrete discharge: automatic shared-body same-source linker\n" ++
+  "Relative bound: " ++ toString publication.boundName ++ "\n" ++
+  "Failure probability: " ++ toString publication.failureName ++ " (typed ≤ 1)\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem
+
+/-- Concrete randomized audit, including linked syntax and hidden-source invariants. -/
+noncomputable def RandomLinkedPublication.summary
+    {signature : DependencySignature} {problem : BitRandomizedMachineProblem}
+    {relativeBound linkedBound : Nat → RandomBit.Cost}
+    {failure : problem.Input → Probability}
+    (publication : RandomLinkedPublication signature problem relativeBound linkedBound failure) :
+    String :=
+  let certificate := publication.certificate
+  "Claim kind: concrete linked randomized structured exact-real/natural RAM algorithm\n" ++
+  "Linked status: fully resolved, unconditional\n" ++
+  "Machine profile: " ++ RandomBit.profile.name ++ "\n" ++
+  "Certificate: " ++ toString publication.certificateName ++ "\n" ++
+  "Problem: " ++ toString publication.problemName ++ "\n" ++
+  "Input/output layouts: " ++ problem.inputLayout.syntaxName ++ " / " ++
+    problem.outputLayout.syntaxName ++ "\n" ++
+  "Random-source length observable: no\n" ++
+  "Random cursor across deterministic calls: exactly preserved\n" ++
+  "Dependency operations: " ++ toString (Fintype.card signature.Op) ++ " resolved\n" ++
+  "Body sharing: one relocated deterministic body per operation\n" ++
+  "Call overhead: exact sum derived from emitted setup/dispatcher/cleanup syntax\n" ++
+  "Program instruction count: " ++ toString certificate.program.length ++ "\n" ++
+  "Program description size: " ++ toString certificate.program.descriptionSize ++ " bits\n" ++
+  "Relative/linked bounds: " ++ toString publication.relativeBoundName ++ " / " ++
+    toString publication.linkedBoundName ++ "\n" ++
+  "Failure probability: " ++ toString publication.failureName ++ " (typed ≤ 1)\n" ++
+  "Cost/output/draw source: one concrete randomized HaltingTrace\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings ++ "\n" ++
+  "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
+
 noncomputable def LinkedPublication.summary
     (publication : LinkedPublication signature problem relativeBound linkedBound) : String :=
   let certificate := Linker.RelativeAlgorithmCertificate.link publication.client
@@ -242,6 +359,23 @@ instance structuredRealRAMRestoringProcedureAuditable : AuditablePublication
 noncomputable instance structuredRealRAMRelativeAuditable : AuditablePublication
     (StructuredRealRAM.Audit.RelativePublication signature problem bound) :=
   ⟨StructuredRealRAM.Audit.RelativePublication.summary⟩
+
+noncomputable instance structuredRealRAMRandomRelativeAuditable
+    {signature : StructuredRealRAM.DependencySignature}
+    {problem : BitRandomizedMachineProblem}
+    {bound : Nat → StructuredRealRAM.RandomBit.Cost}
+    {failure : problem.Input → Probability} : AuditablePublication
+    (StructuredRealRAM.Audit.RandomRelativePublication signature problem bound failure) :=
+  ⟨StructuredRealRAM.Audit.RandomRelativePublication.summary⟩
+
+noncomputable instance structuredRealRAMRandomLinkedAuditable
+    {signature : StructuredRealRAM.DependencySignature}
+    {problem : BitRandomizedMachineProblem}
+    {relativeBound linkedBound : Nat → StructuredRealRAM.RandomBit.Cost}
+    {failure : problem.Input → Probability} : AuditablePublication
+    (StructuredRealRAM.Audit.RandomLinkedPublication signature problem relativeBound linkedBound
+      failure) :=
+  ⟨StructuredRealRAM.Audit.RandomLinkedPublication.summary⟩
 
 noncomputable instance structuredRealRAMLinkedAuditable : AuditablePublication
     (StructuredRealRAM.Audit.LinkedPublication signature problem relativeBound linkedBound) :=

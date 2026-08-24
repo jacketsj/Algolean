@@ -80,7 +80,7 @@ structure SequentialComposition
       composed.inputLayout.RepAt calling.inputRegion input initial →
       ∃ run : ProcedureRun module initial,
         composed.outputLayout.RepAt calling.outputRegion (output input) run.final ∧
-        run.cost ≤ bound input + calling.callOverhead ∧
+        run.cost ≤ bound input ∧
         PreservesFrame composed calling input (output input) initial run.final
   boundIncludesComponents : ∀ input middle,
     firstContract.post (cast composedInput_eq input) middle →

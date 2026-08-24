@@ -24,6 +24,32 @@ namespace AlgoleanTests.StructuredRealRAMProcedureComposition
 open Algolean Algorithms
 open Algorithms.StructuredRealRAM
 
+#check SealedProfile
+#check RandomBit.CoreEmbedding.trace
+#check UniformReal.CoreEmbedding.trace
+#check ParametricProcedureCertificate.forConvention
+#check RandomLinker.refine_trace
+#check RandomLinker.certificate
+#check RandomLinker.hasAlgorithm
+
+/-
+error: Unknown constant
+-/
+#guard_msgs (error, substring := true) in
+#check Instruction.sqrt
+
+/-
+error: Unknown constant
+-/
+#guard_msgs (error, substring := true) in
+#check Instruction.floor
+
+/-
+error: Unknown constant
+-/
+#guard_msgs (error, substring := true) in
+#check SealedProfile.custom
+
 namespace ContractModule
 
 def dependencyContract : ProcedureContract :=
@@ -154,7 +180,6 @@ def dependencyProcedureCertificate :
     scratchRealOwned := fun _ ↦ False
     scratchNatOwned := fun _ ↦ False
     natRegisterOwned := fun _ ↦ False
-    callOverhead := 0
     aliasingPolicy := .inPlace }
   callingRealizes := by
     refine {
@@ -356,5 +381,249 @@ noncomputable def publication :
 #print axioms client_unconditional
 
 end IntegrationModule
+
+namespace RandomizedIntegrationModule
+
+open ContractModule RelativeClientModule DependencyImplementationModule IntegrationModule
+open MeasureTheory
+
+def problem : BitRandomizedMachineProblem where
+  Input := Unit
+  Output := Unit
+  inputLayout := .unit
+  outputLayout := .unit
+  outputRegion := Layout.inputRegion
+  pre _ := True
+  post _ _ := True
+
+def clientProgram : RandomOpenProgram signature :=
+  [.call () Layout.inputRegion Layout.inputRegion 1,
+    .machine (.core (.halt (.literal 0)))]
+
+def bound : Nat → RandomBit.Cost := fun _ ↦
+  RandomBit.Cost.ofCore
+    (dependencyBound () + (Instruction.halt (.literal 0)).cost)
+
+def fixedOverhead : Cost :=
+  (Instruction.nset (.literal 0) 0 0).cost +
+    (fun coordinate ↦
+      (Instruction.ncompare (.literal 0) (.literal 0) 0 0 0).cost coordinate +
+        (Instruction.nset (.literal 0) 0 0).cost coordinate)
+
+theorem concreteCallOverhead_zero (call : DependencyCallRecord signature)
+    (site : call.callSite = 0) :
+    Linker.concreteCallOverhead implementations call = fixedOverhead := by
+  funext coordinate
+  simp [Linker.concreteCallOverhead, fixedOverhead, site]
+
+def linkedBound : Nat → RandomBit.Cost := fun size ↦
+  bound size + RandomBit.Cost.ofCore fixedOverhead
+
+def failure : problem.Input → Algolean.Algorithms.Probability :=
+  fun _ ↦ ⟨0, by simp⟩
+
+theorem relativeSuccessEvent_eq_univ
+    (responder : AdmissibleResponder signature) (input : problem.Input)
+    (validInput : problem.pre input) :
+    RandomRelativeSuccessEvent signature responder problem clientProgram bound input =
+      Set.univ := by
+  apply Set.eq_univ_of_forall
+  intro source
+  cases input
+  let initial := problem.initialMemory ()
+  have inputRep : Layout.unit.RepAt Layout.inputRegion () initial := Layout.unit.init_rep ()
+  have unchanged : Layout.unit.writeAt Layout.inputRegion (responder.answer () ()) initial =
+      initial := RelativeClientModule.unit_writeAt_of_rep Layout.inputRegion initial inputRep
+  have contractUnchanged :
+      (signature.contract ()).outputLayout.writeAt Layout.inputRegion
+        (responder.answer () ()) initial = initial := by
+    change Layout.unit.writeAt Layout.inputRegion (responder.answer () ()) initial = initial
+    exact unchanged
+  have callStep : RandomOpenStep signature responder clientProgram source
+      (RandomBit.Configuration.initial initial) (.running ⟨1, initial, 0⟩)
+      (RandomBit.Cost.ofCore (signature.bound () ())) (some {
+        callSite := 0
+        op := ()
+        input := ()
+        output := responder.answer () ()
+        outputCorrect := responder.correct () () trivial
+        chargedCost := signature.bound () ()
+        chargedCost_eq := rfl }) := by
+    simpa [RandomBit.Configuration.initial, contractUnchanged] using
+      (RandomOpenStep.call
+        (signature := signature) (responder := responder) (program := clientProgram)
+        (source := source) (configuration := RandomBit.Configuration.initial initial) (op := ())
+        (inputRegion := Layout.inputRegion) (outputRegion := Layout.inputRegion)
+        (next := 1) (input := ())
+        (by simp [RandomBit.Configuration.initial, clientProgram]) inputRep trivial)
+  have haltStep : RandomOpenStep signature responder clientProgram source ⟨1, initial, 0⟩
+      (.halted initial 0 0)
+      (RandomBit.Cost.ofCore (Instruction.halt (.literal 0)).cost) none := by
+    exact RandomOpenStep.machine (instruction := .core (.halt (.literal 0)))
+      (by simp [clientProgram]) (by
+        simp [RandomBit.execute, RandomBit.liftCoreOutcome, execute, RealOperand.eval])
+  have trace : RandomOpenHaltingTrace signature responder clientProgram source
+      (RandomBit.Configuration.initial initial) initial 0
+      (RandomBit.Cost.ofCore (signature.bound () ()) +
+        RandomBit.Cost.ofCore (Instruction.halt (.literal 0)).cost)
+      2 0 [{
+        callSite := 0
+        op := ()
+        input := ()
+        output := responder.answer () ()
+        outputCorrect := responder.correct () () trivial
+        chargedCost := signature.bound () ()
+        chargedCost_eq := rfl }] :=
+    RandomOpenHaltingTrace.call callStep (RandomOpenHaltingTrace.halt haltStep)
+  refine ⟨(), initial, 0, _, 2, 0, _, trace, inputRep, trivial, ?_⟩
+  change RandomBit.Cost.ofCore (signature.bound () ()) +
+      RandomBit.Cost.ofCore (Instruction.halt (.literal 0)).cost ≤
+    RandomBit.Cost.ofCore
+      (dependencyBound () + (Instruction.halt (.literal 0)).cost)
+  constructor
+  · intro coordinate
+    rfl
+  · rfl
+
+def clientCertificate :
+    RandomRelativeAlgorithmCertificate signature problem bound failure where
+  program := clientProgram
+  valid := by
+    intro pc instruction fetch target member
+    rcases List.getElem?_eq_some_iff.mp fetch with ⟨pcBelow, rfl⟩
+    have pcBelow' : pc < 2 := by simpa [clientProgram] using pcBelow
+    interval_cases pc
+    · change target < 2
+      simp [clientProgram, RandomOpenInstruction.successors] at member
+      omega
+    · simp [clientProgram, RandomOpenInstruction.successors,
+        RandomBit.Instruction.successors, Instruction.successors] at member
+  measurableSuccess responder input validInput := by
+    rw [relativeSuccessEvent_eq_univ responder input validInput]
+    exact MeasurableSet.univ
+  terminates responder input validInput source := by
+    have success : source ∈
+        RandomRelativeSuccessEvent signature responder problem clientProgram bound input := by
+      rw [relativeSuccessEvent_eq_univ responder input validInput]
+      trivial
+    rcases success with ⟨output, final, result, cost, steps, draws, calls, trace,
+      outputRep, correct, costBound⟩
+    exact ⟨output, final, result, cost, steps, draws, calls, trace, outputRep, costBound⟩
+  successProbability responder input validInput := by
+    rw [relativeSuccessEvent_eq_univ responder input validInput]
+    simp
+
+theorem compatibility :
+    Linker.Compatibility (RandomLinker.placement clientProgram) implementations
+      linkerConfiguration := by
+  simpa [clientProgram, RandomLinker.placement, RandomLinker.placementInstruction,
+    RelativeClientModule.clientProgram] using IntegrationModule.compatibility
+
+theorem returnRegisterInitiallyZero (input : problem.Input) :
+    (problem.initialMemory input).natReg linkerConfiguration.returnRegister = 0 := by
+  simp [problem, BitRandomizedMachineProblem.initialMemory, linkerConfiguration, Layout.init]
+
+theorem boundCovers : RandomLinker.BoundCovers clientCertificate implementations linkedBound := by
+  intro source input final result cost steps draws calls validInput trace costBound
+  cases input
+  cases trace with
+  | halt openStep =>
+      cases openStep with
+      | machine fetch executes =>
+          change clientProgram[0]? = _ at fetch
+          simp [clientProgram] at fetch
+  | machine openStep tail =>
+      cases openStep with
+      | machine fetch executes =>
+          change clientProgram[0]? = _ at fetch
+          simp [clientProgram] at fetch
+  | call openStep tail =>
+      cases openStep with
+      | call fetch inputRep validContractInput =>
+          change clientProgram[0]? = _ at fetch
+          simp [clientProgram] at fetch
+          rcases fetch with ⟨rfl, rfl, rfl, rfl⟩
+          cases tail with
+          | halt tailStep =>
+              cases tailStep with
+              | machine tailFetch tailExec =>
+                  change clientProgram[1]? = _ at tailFetch
+                  simp [clientProgram] at tailFetch
+                  cases tailFetch
+                  simp [RandomBit.execute, execute, RealOperand.eval] at tailExec
+                  rcases tailExec with ⟨⟨⟨rfl, rfl⟩, rfl⟩, rfl⟩
+                  simp only [Linker.totalConcreteCallOverhead, List.map_cons, List.map_nil,
+                    List.sum_cons, List.sum_nil, add_zero]
+                  rw [concreteCallOverhead_zero _ (by
+                    simp [RandomBit.Configuration.initial])]
+                  simp only [linkedBound]
+                  constructor
+                  · intro coordinate
+                    change
+                      (RandomBit.Cost.ofCore (signature.bound () _) +
+                            RandomBit.Cost.ofCore
+                              (Instruction.halt (.literal 0)).cost).machine coordinate +
+                          fixedOverhead coordinate ≤
+                        (bound (problem.inputSize ())).machine coordinate +
+                          fixedOverhead coordinate
+                    exact Nat.add_le_add_right (costBound.1 coordinate)
+                      (fixedOverhead coordinate)
+                  · change
+                      (RandomBit.Cost.ofCore (signature.bound () _) +
+                            RandomBit.Cost.ofCore
+                              (Instruction.halt (.literal 0)).cost).randomDraws + 0 ≤
+                        (bound (problem.inputSize ())).randomDraws + 0
+                    exact Nat.add_le_add_right costBound.2 0
+          | machine tailStep tailTail =>
+              cases tailStep with
+              | machine tailFetch tailExec =>
+                  change clientProgram[1]? = _ at tailFetch
+                  simp [clientProgram] at tailFetch
+                  cases tailFetch
+                  simp [RandomBit.execute, RandomBit.liftCoreOutcome, execute] at tailExec
+          | call tailStep tailTail =>
+              cases tailStep with
+              | call tailFetch tailInputRep tailValid =>
+                  change clientProgram[1]? = _ at tailFetch
+                  simp [clientProgram] at tailFetch
+
+theorem linkedSuccessEvent_eq_univ (input : problem.Input) (validInput : problem.pre input) :
+    problem.SuccessEvent (RandomLinker.link clientProgram implementations linkerConfiguration)
+      input (linkedBound (problem.inputSize input)) = Set.univ := by
+  apply Set.eq_univ_of_forall
+  intro source
+  apply RandomLinker.successEvent_mono_of clientCertificate implementations
+    linkerConfiguration linkedBound compatibility returnRegisterInitiallyZero boundCovers
+    input validInput
+  change source ∈ RandomRelativeSuccessEvent signature implementations.responder problem
+    clientProgram bound input
+  rw [relativeSuccessEvent_eq_univ implementations.responder input validInput]
+  trivial
+
+def assumptions : RandomLinker.LinkingAssumptions clientCertificate implementations
+    linkerConfiguration linkedBound where
+  compatible := compatibility
+  returnRegisterInitiallyZero := returnRegisterInitiallyZero
+  boundCovers := boundCovers
+  measurableSuccess input validInput := by
+    change MeasurableSet (problem.SuccessEvent
+      (RandomLinker.link clientProgram implementations linkerConfiguration) input
+      (linkedBound (problem.inputSize input)))
+    rw [linkedSuccessEvent_eq_univ input validInput]
+    exact MeasurableSet.univ
+
+noncomputable def linkedCertificate :
+    BitRandomizedMachineProblem.MonteCarloAlgorithmCertificate problem linkedBound failure :=
+  RandomLinker.certificate clientCertificate implementations linkerConfiguration linkedBound
+    assumptions
+
+/-- Randomized discharge reuses the deterministic dependency without changing the source. -/
+theorem client_unconditional : problem.HasMonteCarloAlgorithm linkedBound failure :=
+  RandomLinker.hasAlgorithm clientCertificate implementations linkerConfiguration linkedBound
+    assumptions
+
+#print axioms client_unconditional
+
+end RandomizedIntegrationModule
 
 end AlgoleanTests.StructuredRealRAMProcedureComposition

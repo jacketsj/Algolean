@@ -45,7 +45,6 @@ def signature : DependencySignature 8 where
   decEqOp := inferInstance
   contract _ := dependencyContract
   bound _ := dependencyBound
-  callOverhead _ := 0
 
 end ContractModule
 
@@ -140,8 +139,7 @@ def dependencyProcedureCertificate :
     inputRegion := ⟨0⟩
     outputRegion := ⟨0⟩
     scratchOwned := fun _ ↦ False
-    registerOwned := fun _ ↦ False
-    callOverhead := 0 }
+    registerOwned := fun _ ↦ False }
   callingRealizes := by
     refine {
       inputFitsAt := ?_
@@ -213,7 +211,6 @@ theorem dependency_exists : HasProcedure dependencyContract dependencyBound :=
 
 def implementations : ImplementationEnvironment signature where
   implementation _ := dependencyProcedureCertificate
-  callingOverhead_eq _ := rfl
 
 end DependencyImplementationModule
 
@@ -291,9 +288,8 @@ theorem overheadBound (input : clientProblem.Input) (validInput : clientProblem.
           have tail := ih (fun item member ↦ itemBound item (by simp [member]))
           cases call.op
           have head' : Linker.concreteCallOverhead implementations call ≤ 3 := by
-            rw [Linker.concreteCallOverhead, implementations.callingOverhead_eq]
-            simpa [ContractModule.signature, DependencyImplementationModule.implementations,
-              DependencyImplementationModule.dependencyProcedureCertificate] using head
+            rw [Linker.concreteCallOverhead]
+            exact head
           exact (Nat.add_le_add head' tail).trans_eq (by omega)
     exact sumBound calls callSiteBound
   have callCount := trace.calls_length_le_cost
@@ -372,5 +368,175 @@ noncomputable def linkedPublication :
 #print axioms client_unconditional
 
 end IntegrationModule
+
+namespace RandomizedIntegrationModule
+
+open ContractModule RelativeClientModule DependencyImplementationModule IntegrationModule
+open MeasureTheory
+
+def clientProgram : RandomOpenProgram signature :=
+  [.call () ⟨0⟩ ⟨0⟩ 1, .machine (.core (.halt (.immediate 0)))]
+
+def stepBound : clientProblem.Input → Nat := fun _ ↦ 3
+def drawBound : clientProblem.Input → Nat := fun _ ↦ 0
+def overheadBound : clientProblem.Input → Nat := fun _ ↦ 2
+def failure : clientProblem.Input → Algolean.Algorithms.WordRAM.Probability :=
+  fun _ ↦ ⟨0, by simp⟩
+
+theorem relativeSuccessEvent_eq_univ
+    (responder : AdmissibleResponder signature) (input : clientProblem.Input)
+    (validInput : clientProblem.pre input) :
+    RandomRelativeSuccessEvent signature responder clientProblem clientProgram
+      stepBound drawBound input validInput = Set.univ := by
+  apply Set.eq_univ_of_forall
+  intro source
+  cases input
+  let initial := clientProblem.initialMemory () validInput
+  let after := WordLayout.unit.writeAt ⟨0⟩ (responder.answer () ()) initial
+  have inputRep : WordLayout.unit.RepAt ⟨0⟩ () initial :=
+    WordLayout.init_rep _ _ (clientProblem.inputFits () validInput)
+  have callStep : RandomOpenStep signature responder clientProgram source
+      (RandomBit.Configuration.initial initial)
+      (.running ⟨1, after, 0⟩) ⟨2, 0⟩ (some {
+        callSite := 0
+        op := ()
+        input := ()
+        output := responder.answer () ()
+        outputCorrect := responder.correct () () trivial
+        chargedCost := 2
+        chargedCost_eq := rfl }) := by
+    exact RandomOpenStep.call
+      (by simp [RandomBit.Configuration.initial, clientProgram]) inputRep trivial
+  have haltStep : RandomOpenStep signature responder clientProgram source ⟨1, after, 0⟩
+      (.halted after 0 0) ⟨1, 0⟩ none := by
+    exact RandomOpenStep.machine (instruction := .core (.halt (.immediate 0)))
+      (by simp [clientProgram]) (by rfl)
+  have trace : RandomOpenHaltingTrace signature responder clientProgram source
+      (RandomBit.Configuration.initial initial) after 0 0 ⟨3, 0⟩ [{
+        callSite := 0
+        op := ()
+        input := ()
+        output := responder.answer () ()
+        outputCorrect := responder.correct () () trivial
+        chargedCost := 2
+        chargedCost_eq := rfl }] :=
+    RandomOpenHaltingTrace.next callStep (RandomOpenHaltingTrace.halt haltStep)
+  refine ⟨after, 0, 0, ⟨3, 0⟩, _, (), trace, ?_, trivial, by decide, by decide⟩
+  exact WordLayout.writeAt_rep _ _ _ _ (by
+    change WordLayout.unit.FitsAt ⟨0⟩ ()
+    simp [WordLayout.FitsAt, WordLayout.Fits, WordLayout.footprintWords,
+      WordLayout.encode])
+
+def clientCertificate :
+    RandomRelativeAlgorithmCertificate signature clientProblem stepBound drawBound failure where
+  program := clientProgram
+  valid := by
+    intro pc instruction fetch target member
+    rcases List.getElem?_eq_some_iff.mp fetch with ⟨pcBelow, rfl⟩
+    have pcBelow' : pc < 2 := by simpa [clientProgram] using pcBelow
+    interval_cases pc
+    · change target < 2
+      simp [clientProgram, RandomOpenInstruction.successors] at member
+      omega
+    · simp [clientProgram, RandomOpenInstruction.successors,
+        RandomBit.Instruction.successors, RAM.Instruction.successors] at member
+  measurableSuccess responder input validInput := by
+    rw [relativeSuccessEvent_eq_univ responder input validInput]
+    exact MeasurableSet.univ
+  successProbability responder input validInput := by
+    rw [relativeSuccessEvent_eq_univ responder input validInput]
+    simp
+
+theorem compatibility :
+    Linker.Compatibility (RandomLinker.placement clientProgram) implementations
+      linkerConfiguration := by
+  simpa [clientProgram, RandomLinker.placement, RandomLinker.placementInstruction,
+    RelativeClientModule.clientProgram] using IntegrationModule.compatibility
+
+theorem overhead_le (source : RandomBit.Source) (input : clientProblem.Input)
+    (validInput : clientProblem.pre input) (final : Memory 8) (result : BitVec 8)
+    (draws : Nat) (cost : RandomBit.Cost)
+    (calls : List (DependencyCallRecord signature))
+    (trace : RandomOpenHaltingTrace signature implementations.responder clientProgram source
+      (RandomBit.Configuration.initial (clientProblem.initialMemory input validInput))
+      final result draws cost calls) :
+    Linker.totalConcreteCallOverhead implementations calls ≤ overheadBound input := by
+  cases trace with
+  | halt step =>
+      cases step with
+      | machine fetch observed =>
+          change clientProgram[0]? = _ at fetch
+          simp [clientProgram] at fetch
+  | @next _ nextConfiguration _ _ _ _ _ headCall tailCalls step tail =>
+      cases step with
+      | machine fetch observed =>
+          change clientProgram[0]? = _ at fetch
+          simp [clientProgram] at fetch
+      | call fetch inputRep valid =>
+          change clientProgram[0]? = _ at fetch
+          simp [clientProgram] at fetch
+          rcases fetch with ⟨rfl, rfl, rfl, rfl⟩
+          cases tail with
+          | halt tailStep =>
+              cases tailStep with
+              | machine tailFetch tailObserved =>
+                  change clientProgram[1]? = _ at tailFetch
+                  simp [clientProgram] at tailFetch
+                  cases tailFetch
+                  simp [Linker.totalConcreteCallOverhead, Linker.concreteCallOverhead,
+                    overheadBound, RandomBit.Configuration.initial]
+          | next tailStep tailTail =>
+              cases tailStep with
+              | machine tailFetch tailObserved =>
+                  change clientProgram[1]? = _ at tailFetch
+                  simp [clientProgram] at tailFetch
+                  cases tailFetch
+                  simp [RandomBit.execute, RAM.execute] at tailObserved
+              | call tailFetch _ _ =>
+                  change clientProgram[1]? = _ at tailFetch
+                  simp [clientProgram] at tailFetch
+
+theorem linkedSuccessEvent_eq_univ (input : clientProblem.Input)
+    (validInput : clientProblem.pre input) :
+    clientProblem.RandomSuccessEvent
+      (RandomLinker.link clientProgram implementations linkerConfiguration)
+      (RandomLinker.linkedStepBound stepBound overheadBound) drawBound input validInput =
+      Set.univ := by
+  apply Set.eq_univ_of_forall
+  intro source
+  apply RandomLinker.successEvent_mono_of clientCertificate implementations
+    linkerConfiguration overheadBound compatibility overhead_le input validInput
+  change source ∈ RandomRelativeSuccessEvent signature implementations.responder clientProblem
+    clientProgram stepBound drawBound input validInput
+  rw [relativeSuccessEvent_eq_univ]
+  trivial
+
+def assumptions : RandomLinker.LinkingAssumptions clientCertificate implementations
+    linkerConfiguration overheadBound where
+  compatible := compatibility
+  overhead_le := overhead_le
+  measurableSuccess input validInput := by
+    change MeasurableSet (clientProblem.RandomSuccessEvent
+      (RandomLinker.link clientProgram implementations linkerConfiguration)
+      (RandomLinker.linkedStepBound stepBound overheadBound) drawBound input validInput)
+    rw [linkedSuccessEvent_eq_univ input validInput]
+    exact MeasurableSet.univ
+
+noncomputable def linkedCertificate :
+    clientProblem.RandomizedAlgorithmCertificate
+      (RandomLinker.linkedStepBound stepBound overheadBound) drawBound failure :=
+  RandomLinker.certificate clientCertificate implementations linkerConfiguration overheadBound
+    assumptions
+
+/-- Randomized one-line discharge uses the same hidden source and the deterministic body code. -/
+theorem client_unconditional :
+    clientProblem.HasRandomizedWordRAMAlgorithm
+      (RandomLinker.linkedStepBound stepBound overheadBound) drawBound failure :=
+  RandomLinker.hasAlgorithm clientCertificate implementations linkerConfiguration overheadBound
+    assumptions
+
+#print axioms client_unconditional
+
+end RandomizedIntegrationModule
 
 end AlgoleanTests.WordRAMProcedureComposition

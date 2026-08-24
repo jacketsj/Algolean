@@ -46,10 +46,10 @@ structure Compatibility {signature : DependencySignature}
       outputRegion = (environment.implementation op).calling.outputRegion
 
 /-- Exact implementation-specific overhead added to one dynamic call. -/
-def concreteCallOverhead (environment : ImplementationEnvironment signature)
+@[nolint unusedArguments]
+def concreteCallOverhead (_environment : ImplementationEnvironment signature)
     (call : DependencyCallRecord signature) : Cost :=
-  (environment.implementation call.op).calling.callOverhead +
-    (Instruction.nset (.literal call.callSite) 0 0).cost +
+  (Instruction.nset (.literal call.callSite) 0 0).cost +
     (fun coordinate =>
       (call.callSite + 1) * (Instruction.ncompare (.literal 0) (.literal 0) 0 0 0).cost coordinate +
         (Instruction.nset (.literal 0) 0 0).cost coordinate)
@@ -807,13 +807,10 @@ theorem refine_call (client : OpenProgram signature)
   simp only [concreteCallOverhead, Pi.add_apply]
   simp only [Instruction.cost, NatOperand.reads, Cost.ofFields] at relocatedCoordinate runCoordinate ⊢
   simp only [dispatcherCostFrom, Nat.sub_zero]
-  have linkedRun := relocatedCoordinate.trans (runCoordinate.trans
-    (Nat.le_add_right (signature.bound op input coordinate)
-      ((environment.implementation op).calling.callOverhead coordinate)))
+  have linkedRun := relocatedCoordinate.trans runCoordinate
   calc
     _ ≤ ![1, 0, 0, 0, 0, 0, 0, 0, 0] coordinate +
-        ((signature.bound op input coordinate +
-          (environment.implementation op).calling.callOverhead coordinate) +
+        (signature.bound op input coordinate +
           ((pc + 1) * ![1, 0, 0, 0, 0, 0, 0, 0, 1] coordinate +
             ![1, 0, 0, 0, 0, 0, 0, 0, 0] coordinate)) :=
       Nat.add_le_add_left
