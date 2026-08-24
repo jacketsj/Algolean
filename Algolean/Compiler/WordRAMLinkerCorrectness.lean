@@ -29,7 +29,7 @@ def operandAvoids (reserved : Nat) : RAM.Operand (BitVec w) (BitVec w) → Prop
 
 /-- Static noninterference check for the linker-owned return register. -/
 def instructionAvoids (reserved : Nat) :
-    RAM.Instruction (BitVec w) (BitVec w) Empty → Prop
+    RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w) → Prop
   | .set source destination _ | .neg source destination _ =>
       operandAvoids reserved source ∧ addressOperandAvoids reserved destination
   | .add left right destination _ | .sub left right destination _
@@ -45,7 +45,13 @@ def instructionAvoids (reserved : Nat) :
       operandAvoids reserved left ∧ operandAvoids reserved right
   | .compareAddress left right _ _ _ =>
       addressOperandAvoids reserved left ∧ addressOperandAvoids reserved right
-  | .extra impossible _ => nomatch impossible
+  | .extra (.valueToAddress source destination) _ =>
+      operandAvoids reserved source ∧ destination ≠ reserved
+  | .extra (.addressToValue source destination) _ =>
+      addressOperandAvoids reserved source ∧ addressOperandAvoids reserved destination
+  | .extra (.mulAddress left right destination) _ =>
+      addressOperandAvoids reserved left ∧ addressOperandAvoids reserved right ∧
+        destination ≠ reserved
   | .halt result => operandAvoids reserved result
 
 /-- Static and ABI obligations needed by the generic linker proof. -/
@@ -54,7 +60,7 @@ structure Compatibility {w : Nat} {signature : DependencySignature w}
     (configuration : Configuration w) : Prop where
   clientFits : client.length ≤ 2 ^ w
   clientAvoidsReturnRegister : ∀ (pc : Nat)
-      (instruction : RAM.Instruction (BitVec w) (BitVec w) Empty),
+      (instruction : RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w)),
     client[pc]? = some (OpenInstruction.core instruction) →
       instructionAvoids configuration.jumpRegister instruction
   inputRegion_eq : ∀ (pc : Nat) (op : signature.Op)
@@ -94,10 +100,10 @@ theorem inputRep_writeAddress (layout : WordLayout w alpha) (region : Region w)
 
 /-- A safe client core step preserves the linker-owned address register. -/
 theorem instructionAvoids_preserves_register (instruction :
-    RAM.Instruction (BitVec w) (BitVec w) Empty) (reserved : Nat)
+    RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w)) (reserved : Nat)
     (safe : instructionAvoids reserved instruction) (memory : Memory w)
     (next : WordRAM.Configuration w)
-    (executes : RAM.execute (WordRAM.ops w) RAM.noExtra instruction memory = .running next) :
+    (executes : RAM.execute (WordRAM.ops w) WordRAM.evalExtra instruction memory = .running next) :
     next.memory.address reserved = memory.address reserved := by
   cases instruction with
   | set | add | sub | mul | div | neg | compare | compareAddress =>
@@ -133,7 +139,30 @@ theorem instructionAvoids_preserves_register (instruction :
           ((WordRAM.ops w).addressSub
             (RAM.AddressOperand.eval memory left)
             (RAM.AddressOperand.eval memory right)) memory.address)
-  | extra impossible pc => exact Empty.elim impossible
+  | extra instruction pc =>
+      cases instruction with
+      | valueToAddress source destination =>
+          rcases safe with ⟨_, destinationSafe⟩
+          simp only [RAM.execute] at executes
+          injection executes with equal
+          subst next
+          simpa only [WordRAM.evalExtra, RAM.Memory.writeAddress] using
+            (Function.update_of_ne destinationSafe.symm
+              (RAM.Operand.eval (WordRAM.ops w) memory source) memory.address)
+      | addressToValue source destination =>
+          simp only [RAM.execute] at executes
+          injection executes with equal
+          subst next
+          rfl
+      | mulAddress left right destination =>
+          rcases safe with ⟨_, _, destinationSafe⟩
+          simp only [RAM.execute] at executes
+          injection executes with equal
+          subst next
+          simpa only [WordRAM.evalExtra, RAM.Memory.writeAddress] using
+            (Function.update_of_ne destinationSafe.symm
+              ((RAM.AddressOperand.eval memory left) *
+                (RAM.AddressOperand.eval memory right)) memory.address)
   | halt result => cases executes
 
 /-- A finite sequence of running transitions, used for call and return segments. -/
@@ -178,14 +207,14 @@ theorem RunningTrace.trans
         RunningTrace.next observes (ih second)
 
 theorem relocate_execute_running (base dispatcher : Nat)
-    (instruction : RAM.Instruction (BitVec w) (BitVec w) Empty)
+    (instruction : RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w))
     (memory : Memory w) (next : WordRAM.Configuration w)
-    (executes : RAM.execute (WordRAM.ops w) RAM.noExtra instruction memory = .running next) :
-    RAM.execute (WordRAM.ops w) RAM.noExtra
+    (executes : RAM.execute (WordRAM.ops w) WordRAM.evalExtra instruction memory = .running next) :
+    RAM.execute (WordRAM.ops w) WordRAM.evalExtra
       (relocateInstruction base dispatcher instruction) memory =
       .running ⟨base + next.pc, next.memory⟩ := by
   cases instruction <;>
-    simp only [RAM.execute, relocateInstruction, RAM.Operand.eval,
+    simp only [RAM.execute, relocateInstruction, WordRAM.evalExtra, RAM.Operand.eval,
       RAM.AddressOperand.eval] at executes ⊢ <;>
     try { cases executes; rfl }
   case compare =>
@@ -197,18 +226,17 @@ theorem relocate_execute_running (base dispatcher : Nat)
     generalize (WordRAM.ops w).addressCompare _ _ = ordering
     cases ordering <;> rfl
   case halt => cases executes
-  case extra impossible next => exact Empty.elim impossible
 
 theorem relocate_execute_halted (base dispatcher : Nat)
-    (instruction : RAM.Instruction (BitVec w) (BitVec w) Empty)
+    (instruction : RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w))
     (memory final : Memory w) (result : BitVec w)
-    (executes : RAM.execute (WordRAM.ops w) RAM.noExtra instruction memory =
+    (executes : RAM.execute (WordRAM.ops w) WordRAM.evalExtra instruction memory =
       .halted final result) :
-    RAM.execute (WordRAM.ops w) RAM.noExtra
+    RAM.execute (WordRAM.ops w) WordRAM.evalExtra
       (relocateInstruction base dispatcher instruction) memory =
       .running ⟨dispatcher, final⟩ := by
   cases instruction <;>
-    simp only [RAM.execute, relocateInstruction, RAM.Operand.eval,
+    simp only [RAM.execute, relocateInstruction, WordRAM.evalExtra, RAM.Operand.eval,
       RAM.AddressOperand.eval] at executes ⊢ <;>
     try { cases executes }
   case halt => cases executes; rfl
@@ -243,7 +271,7 @@ theorem relocate_trace {w : Nat} {signature : DependencySignature w}
         simp only [WordRAM.stepCosted, WordRAM.costedSemantics,
           RAM.CostedSemantics.step, linkedFetch, RAM.CostedSemantics.unit]
         have originalExecution :
-            RAM.execute (WordRAM.ops w) RAM.noExtra instruction calleeConfig.memory =
+            RAM.execute (WordRAM.ops w) WordRAM.evalExtra instruction calleeConfig.memory =
               .halted calleeFinal calleeResult := by
           simpa [RAM.CostedSemantics.unit] using
             congrArg RAM.StepObservation.outcome observes
@@ -270,7 +298,7 @@ theorem relocate_trace {w : Nat} {signature : DependencySignature w}
         · simp only [WordRAM.stepCosted, WordRAM.costedSemantics,
             RAM.CostedSemantics.step, linkedFetch, RAM.CostedSemantics.unit]
           have originalExecution :
-              RAM.execute (WordRAM.ops w) RAM.noExtra instruction calleeConfig.memory =
+              RAM.execute (WordRAM.ops w) WordRAM.evalExtra instruction calleeConfig.memory =
                 .running calleeNext := by
             simpa [RAM.CostedSemantics.unit] using
               congrArg RAM.StepObservation.outcome observes
@@ -460,9 +488,9 @@ theorem refine_call {w : Nat} {signature : DependencySignature w}
       (memory.writeAddress configuration.jumpRegister (BitVec.ofNat w pc)) := by
     rw [← inputRegionEq]
     exact inputRep_writeAddress _ _ _ _ _ _ inputRep
-  rcases implementation.correct input validInput
+  rcases implementation.restoringCorrect input validInput
       (memory.writeAddress configuration.jumpRegister (BitVec.ofNat w pc)) setupRep with
-    ⟨run, outputRep, costBound, frame, canonicalEffect⟩
+    ⟨run, outputRep, costBound, canonicalEffect⟩
   have setup := RunningTrace.one (call_setup_step client environment configuration pc op
     inputRegion outputRegion next memory fetch)
   have relocated := relocate_trace client environment configuration op run.trace

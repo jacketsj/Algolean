@@ -170,6 +170,16 @@ structure ProcedurePublication (contract : ProcedureContract w)
   correctnessTheorem : Lean.Name
   warnings : List String := []
 
+/-- Typed publication for a callable procedure satisfying the restoring convention. -/
+structure RestoringProcedurePublication (contract : ProcedureContract w)
+    (bound : ProcedureBound contract) where
+  certificate : RestoringProcedureCertificate contract bound
+  certificateName : Lean.Name
+  contractName : Lean.Name
+  boundName : Lean.Name
+  correctnessTheorem : Lean.Name
+  warnings : List String := []
+
 /-- Audit derived from the concrete fixed-width certificate, not a name-only manifest. -/
 def FixedWidthPublication.summary {w : ℕ} {problem : StructuredProblem w}
     {bound : problem.Input → ℕ}
@@ -335,8 +345,31 @@ def ProcedurePublication.summary {w : Nat} {contract : ProcedureContract w}
   "Instruction count: " ++ toString publication.instructionCount ++ "\n" ++
   "Description size: " ++ toString publication.descriptionSize ++ " bits\n" ++
   "Call overhead: " ++ toString certificate.calling.callOverhead ++ "\n" ++
-  "Frame safety: certified outside input/output/scratch/register ownership\n" ++
-  "Final effect: canonical structural output write\n" ++
+  "Frame safety: certified outside the actual input/output and owned scratch/registers\n" ++
+  "Owned scratch after return: permitted to change\n" ++
+  "Bound: " ++ toString publication.boundName ++ "\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings ++ "\n" ++
+  "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
+
+/-- Restoring-procedure audits disclose the stronger exact canonical effect. -/
+def RestoringProcedurePublication.summary {w : Nat} {contract : ProcedureContract w}
+    {bound : ProcedureBound contract}
+    (publication : RestoringProcedurePublication contract bound) : String :=
+  let certificate := publication.certificate
+  "Claim kind: restoring callable fixed-width Word-RAM procedure\n" ++
+  "Certificate: " ++ toString publication.certificateName ++ "\n" ++
+  "Contract: " ++ toString publication.contractName ++ "\n" ++
+  "Word width: " ++ toString w ++ "\n" ++
+  "Input layout: " ++ contract.inputLayout.syntaxName ++ "\n" ++
+  "Output layout: " ++ contract.outputLayout.syntaxName ++ "\n" ++
+  "Entry point: " ++ toString certificate.module.entry ++ "\n" ++
+  "Instruction count: " ++ toString certificate.module.code.length ++ "\n" ++
+  "Description size: " ++ toString (WordRAM.descriptionSize certificate.module.code) ++
+    " bits\n" ++
+  "ABI realizability: carried by callingRealizes\n" ++
+  "Actual-output frame: carried by the base procedure certificate\n" ++
+  "Final effect: only the canonical output write remains\n" ++
   "Bound: " ++ toString publication.boundName ++ "\n" ++
   "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
   "Warnings: " ++ stringList publication.warnings ++ "\n" ++
@@ -389,9 +422,14 @@ instance {contract : WordRAM.ProcedureContract w} {bound : WordRAM.ProcedureBoun
     AuditablePublication (WordRAM.Audit.ProcedurePublication contract bound) :=
   ⟨WordRAM.Audit.ProcedurePublication.summary⟩
 
+instance {contract : WordRAM.ProcedureContract w} {bound : WordRAM.ProcedureBound contract} :
+    AuditablePublication (WordRAM.Audit.RestoringProcedurePublication contract bound) :=
+  ⟨WordRAM.Audit.RestoringProcedurePublication.summary⟩
+
 end Algolean.Algorithms.Audit
 
 /-- Print the class-selected closed Word-RAM layout for a type. -/
+@[nolint topNamespace]
 syntax (name := wordRAMLayoutAuditCmd) "#layout_audit" "WordRAM" term:max term:max : command
 
 macro_rules

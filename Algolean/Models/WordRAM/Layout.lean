@@ -264,6 +264,7 @@ def RepAt (layout : WordLayout w alpha) (region : Region w)
         (layout.encode value)[index]
 
 /-- Canonical zero-padded input memory.  The fit proof prevents address wraparound. -/
+@[nolint unusedArguments]
 def init (layout : WordLayout w alpha) (value : alpha)
     (_fits : layout.FitsInput value) : WordRAM.Memory w :=
   { data := fun address => (layout.encode value).getD address.toNat 0

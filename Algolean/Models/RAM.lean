@@ -346,8 +346,41 @@ end IntegerRAM
 
 namespace WordRAM
 
-/-- `w`-bit word-RAM programs. Data, literals, and addresses all wrap at `w` bits. -/
-abbrev Program (w : ℕ) := RAM.Program (BitVec w) (BitVec w) Empty
+/--
+The fixed, closed bridge between word data and word addresses.
+
+This bridge is specific to the Word RAM: values and addresses are definitionally the same
+`BitVec w` type.  It is deliberately not a field of generic `RAM.Ops`, since doing that would
+silently give exact-real machines a real-to-address conversion.  Multiplication of address words
+is included so a loaded index can participate in ordinary constant-time address arithmetic.
+-/
+inductive ExtraInstruction (w : ℕ) where
+  | valueToAddress
+      (source : RAM.Operand (BitVec w) (BitVec w))
+      (destinationAddressRegister : ℕ)
+  | addressToValue
+      (source : RAM.AddressOperand (BitVec w))
+      (destination : RAM.AddressOperand (BitVec w))
+  | mulAddress
+      (left right : RAM.AddressOperand (BitVec w))
+      (destinationAddressRegister : ℕ)
+
+namespace ExtraInstruction
+
+/-- Full payload size of a fixed Word-RAM bridge instruction. -/
+def descriptionSize : ExtraInstruction w → ℕ
+  | .valueToAddress source destination =>
+      2 + source.descriptionSize (fun _ ↦ w) (fun _ ↦ w) + RAM.natDescriptionSize destination
+  | .addressToValue source destination =>
+      2 + source.descriptionSize (fun _ ↦ w) + destination.descriptionSize (fun _ ↦ w)
+  | .mulAddress left right destination =>
+      2 + left.descriptionSize (fun _ ↦ w) + right.descriptionSize (fun _ ↦ w) +
+        RAM.natDescriptionSize destination
+
+end ExtraInstruction
+
+/-- `w`-bit word-RAM programs with the one sealed word/address bridge. -/
+abbrev Program (w : ℕ) := RAM.Program (BitVec w) (BitVec w) (ExtraInstruction w)
 /-- `w`-bit word-RAM memory. -/
 abbrev Memory (w : ℕ) := RAM.Memory (BitVec w) (BitVec w)
 /-- `w`-bit word-RAM runtime configuration. -/
@@ -368,9 +401,19 @@ def ops (w : ℕ) : RAM.Ops (BitVec w) (BitVec w) (BitVec w) where
   addressSub := (· - ·)
   addressCompare x y := if x.toNat < y.toNat then .lt else if x = y then .eq else .gt
 
+/-- Interpret the fixed Word-RAM bridge; theorem authors cannot replace this evaluator. -/
+def evalExtra (instruction : ExtraInstruction w) (memory : Memory w) : Memory w :=
+  match instruction with
+  | .valueToAddress source destination =>
+      memory.writeAddress destination (source.eval (ops w) memory)
+  | .addressToValue source destination =>
+      memory.write (destination.eval memory) (source.eval memory)
+  | .mulAddress left right destination =>
+      memory.writeAddress destination ((left.eval memory) * (right.eval memory))
+
 /-- Run a word-RAM program for at most `fuel` instructions. -/
 def runFor (program : Program w) (fuel : ℕ) (memory : Memory w) : RunResult w :=
-  RAM.runFor (ops w) RAM.noExtra program fuel ⟨0, memory⟩
+  RAM.runFor (ops w) evalExtra program fuel ⟨0, memory⟩
 
 end WordRAM
 

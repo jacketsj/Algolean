@@ -48,9 +48,13 @@ def ProcedureContract.then (first : ProcedureContract w) (second : ProcedureCont
     outputLayout := second.outputLayout
     pre := first.pre
     post := fun input output ↦
-      ∃ middle, first.post input middle ∧
+      ∃ middle, first.post input middle ∧ second.pre (cast sameCarrier middle) ∧
         second.post (cast sameCarrier middle) output
-    inputFits := first.inputFits }
+    inputFits := first.inputFits
+    outputFits := by
+      intro input output valid
+      rintro ⟨middle, firstCorrect, secondValid, secondCorrect⟩
+      exact second.outputFits (cast sameCarrier middle) output secondValid secondCorrect }
 
 /--
 Evidence produced by the verified module linker for sequential composition.  The transfer charge
@@ -67,6 +71,7 @@ structure SequentialComposition
   transferCost : firstContract.Input → Nat
   module : ProcedureModule w
   calling : CallingConvention w
+  callingRealizes : calling.Realizes composed
   valid : module.Valid
   output : composed.Input → composed.Output
   outputCorrect : ∀ input, composed.pre input → composed.post input (output input)
@@ -76,8 +81,7 @@ structure SequentialComposition
       ∃ run : ProcedureRun module initial,
         composed.outputLayout.RepAt calling.outputRegion (output input) run.final ∧
         run.cost ≤ bound input + calling.callOverhead ∧
-        PreservesFrame composed calling input initial run.final ∧
-        run.final = composed.outputLayout.writeAt calling.outputRegion (output input) initial
+        PreservesFrame composed calling input (output input) initial run.final
   boundIncludesComponents : ∀ input middle,
     firstContract.post (cast composedInput_eq input) middle →
       secondContract.pre (cast middle_eq middle) →
@@ -92,6 +96,7 @@ def ProcedureCertificate.then
     ProcedureCertificate composed bound where
   module := composition.module
   calling := composition.calling
+  callingRealizes := composition.callingRealizes
   valid := composition.valid
   output := composition.output
   outputCorrect := composition.outputCorrect

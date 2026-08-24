@@ -48,12 +48,30 @@ separately verified subroutines. Abstract calls are finite typed syntax; linking
 callee body, executes every callee instruction in the same trace, records structured dynamic calls,
 and charges setup, complete callee cost, dispatch, and cleanup. A completed implementation
 environment yields a concrete `FixedWidthAlgorithmCertificateBy` without repeating the relative
-client correctness proof. Width-uniform dependency linking requires one finite open template and
+client correctness proof. Every callable certificate carries an ABI-realizability proof for its
+actual input and output values. `ProcedureCertificate` permits declared scratch to remain changed;
+the explicitly stronger `RestoringProcedureCertificate` proves that only the canonical output
+overwrite remains. In-place and disjoint input/output policies are stated in the calling convention.
+Width-uniform dependency linking requires one finite open template and
 one finite linked template whose every specialization is the concrete linker output; it cannot
 choose code independently by width. `WordRAM.RandomBit` separately supplies a hidden lengthless iid
 source for randomized ordinary Word-RAM claims. Randomized relative clients preserve that hidden
 source across deterministic calls and can be discharged only to ordinary closed randomized syntax
 with a same-source trace-refinement proof.
+
+The Word RAM has a sealed word/address bridge: a word loaded from data memory can become an address
+in one charged transition, and word address multiplication is an explicit unit-cost primitive.
+Typed fixed-stride accessors therefore compile to multiply-and-add code, carry no-wrap conditions,
+and have operational trace, cost, and frame theorems. Variable-footprint `IndexedArray` offsets are
+required to equal cumulative canonical element footprints, not merely to be monotone.
+
+Structured exact-real/natural RAM has parallel model-specific infrastructure.
+`StructuredRealRAM.CanonicalLayout` selects only closed `Layout` syntax; reusable compact arrays,
+matrices, tensors, sparse and indexed tables, combinatorial structures, and named physical graph
+formats make storage explicit. Exact input-dependent bounds use `MachineProblem.HasAlgorithmBy`.
+Callable contracts distinguish general frame-safe and restoring procedures, relative traces expose
+typed calls and exact call costs, and the shared-body linker emits each deterministic dependency
+once into one finite core program. External `oracleCall` profiles remain separately named.
 
 `Algolean.Compiler.CFG` supplies first-order labeled blocks, shared branch joins, backward runtime
 loops, typed register handles, numeric-jump assembly, and an exact emitted-code-size theorem.
@@ -69,6 +87,12 @@ query/answer layouts, layout-derived transfer costs, one responder fixed through
 and a typed certificate that both proves interface non-vacuity and works for every admissible
 responder.
 
+`#layout_audit WordRAM w T` and `#layout_audit StructuredRealRAM T` print resolved closed
+representation syntax and access/footprint conventions. `#machine_profile_audit` reports the
+StructuredRealRAM core, hidden-bit, or exact-uniform-real profile. Continuous-randomness Monte Carlo
+certificates carry an explicit measurable-success-event proof; fair-bit certificates carry the
+corresponding product-measure obligation.
+
 Machine conventions are intentionally distinct. `IntegerRAM` is an ordinary unit-cost RAM with
 unbounded signed integer data and natural addresses. `WordRAM` has explicit fixed-width modular
 words and addresses. `StructuredRealRAM` has exact reals plus an unbounded unit-cost natural bank,
@@ -82,7 +106,9 @@ The checked module [`Algolean.Tutorial`](Algolean/Tutorial.lean) explains how to
 language, prove functional correctness and cost, package a problem statement, choose between
 `Prog` and a fixed RAM program, and audit the resulting guarantee. Checked acceptance examples for
 the new interfaces are in
-[`AlgoleanTests.ExistentialAlgorithms`](AlgoleanTests/ExistentialAlgorithms.lean).
+[`AlgoleanTests.ExistentialAlgorithms`](AlgoleanTests/ExistentialAlgorithms.lean),
+[`AlgoleanTests.WordRAMInfrastructure`](AlgoleanTests/WordRAMInfrastructure.lean), and
+[`AlgoleanTests.StructuredRealRAMProcedureComposition`](AlgoleanTests/StructuredRealRAMProcedureComposition.lean).
 
 ## Nomenclature
 `Algolean` is a pun. It is intended to be read in two ways.

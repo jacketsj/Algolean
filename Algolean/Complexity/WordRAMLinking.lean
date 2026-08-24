@@ -96,6 +96,7 @@ theorem link_instructionCount
   Linker.link_length _ _ _
 
 /-- Typed complete dependency graph exposed for audits. -/
+@[nolint unusedArguments]
 def dependencyDAG
     (_client : LinkableRelativeAlgorithmCertificate signature problem relativeBound linkedBound) :
     List signature.Op := Linker.operations signature

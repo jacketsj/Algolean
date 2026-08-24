@@ -139,8 +139,8 @@ def canonicalMemory (input : Input w) : Memory w :=
 
 /-- The sealed unit-cost semantics for a fixed word width. -/
 def costedSemantics (w : ℕ) :
-    RAM.CostedSemantics (BitVec w) (BitVec w) (BitVec w) Empty ℕ :=
-  RAM.CostedSemantics.unit (ops w) RAM.noExtra
+    RAM.CostedSemantics (BitVec w) (BitVec w) (BitVec w) (ExtraInstruction w) ℕ :=
+  RAM.CostedSemantics.unit (ops w) evalExtra
 
 /-- One costed step in the sealed `w`-bit word-RAM profile. -/
 def stepCosted (program : Program w) :
@@ -202,7 +202,7 @@ abbrev Problem.HasFixedAlgorithm (problem : Problem w) (bound : ℕ → ℕ) : P
 /-- Full binary source-description size for a `w`-bit word-RAM program. -/
 def descriptionSize (program : Program w) : ℕ :=
   RAM.Program.descriptionSize (fun _ => w) (fun _ => w)
-    (fun instruction : Empty => nomatch instruction) program
+    ExtraInstruction.descriptionSize program
 
 /-- A typed nonuniform fixed-width word-RAM family certificate with both code metrics. -/
 structure NonuniformFamilyCertificate (problem : Problem w)

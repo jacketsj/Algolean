@@ -54,7 +54,7 @@ structure DependencyCallRecord (signature : DependencySignature w) where
 
 /-- Closed first-order open-module instructions. -/
 inductive OpenInstruction (signature : DependencySignature w) where
-  | core (instruction : RAM.Instruction (BitVec w) (BitVec w) Empty)
+  | core (instruction : RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w))
   | call (op : signature.Op) (inputRegion outputRegion : Region w) (next : ℕ)
 
 /-- A finite relative program with no host-language continuation or implementation. -/
@@ -81,7 +81,7 @@ inductive OpenStep (signature : DependencySignature w)
       Option (DependencyCallRecord signature) → Prop where
   | core {configuration instruction outcome}
       (fetch : program[configuration.pc]? = some (.core instruction))
-      (execute : RAM.execute (ops w) RAM.noExtra instruction configuration.memory = outcome) :
+      (execute : RAM.execute (ops w) WordRAM.evalExtra instruction configuration.memory = outcome) :
       OpenStep signature responder program configuration outcome 1 none
   | call {configuration op inputRegion outputRegion next input}
       (fetch : program[configuration.pc]? = some (.call op inputRegion outputRegion next))
@@ -124,9 +124,11 @@ theorem OpenHaltingTrace.calls_length_le_cost
     (trace : OpenHaltingTrace signature responder program initial final result cost calls) :
     calls.length ≤ cost := by
   induction trace with
-  | halt step => cases step <;> simp
+  | halt step =>
+      cases step
+      all_goals simp
   | next step tail ih =>
-      cases step <;> (simp_all; omega)
+      cases step <;> simp_all <;> omega
 
 /-- Every dynamic call record names an actual in-range call instruction. -/
 theorem OpenHaltingTrace.callSite_lt
@@ -222,7 +224,7 @@ structure RelativeAlgorithmCertificate (signature : DependencySignature w)
 /-- Concrete certified implementations for every operation in a finite signature. -/
 structure ImplementationEnvironment (signature : DependencySignature w) where
   implementation : (op : signature.Op) →
-    ProcedureCertificate (signature.contract op) (signature.bound op)
+    RestoringProcedureCertificate (signature.contract op) (signature.bound op)
   callingOverhead_eq : ∀ op,
     (implementation op).calling.callOverhead = signature.callOverhead op
 

@@ -72,8 +72,8 @@ def dispatcherBase (client : OpenProgram signature)
 
 /-- Relocate one callee instruction; halts become jumps to the shared dispatcher. -/
 def relocateInstruction {w : ℕ} (base dispatcher : ℕ) :
-    RAM.Instruction (BitVec w) (BitVec w) Empty →
-      RAM.Instruction (BitVec w) (BitVec w) Empty
+    RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w) →
+      RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w)
   | .set source destination next => .set source destination (base + next)
   | .add left right destination next => .add left right destination (base + next)
   | .sub left right destination next => .sub left right destination (base + next)
@@ -89,11 +89,12 @@ def relocateInstruction {w : ℕ} (base dispatcher : ℕ) :
       .compare left right (base + less) (base + equal) (base + greater)
   | .compareAddress left right less equal greater =>
       .compareAddress left right (base + less) (base + equal) (base + greater)
-  | .extra impossible _ => nomatch impossible
+  | .extra instruction next => .extra instruction (base + next)
   | .halt _ => .compareAddress (.immediate 0) (.immediate 0)
       dispatcher dispatcher dispatcher
 
 /-- Relocate one implementation body exactly once. -/
+@[nolint unusedArguments]
 def implementationBody {w : ℕ} {signature : DependencySignature w}
     (client : OpenProgram signature)
     (environment : ImplementationEnvironment signature) (_configuration : Configuration w)
@@ -168,7 +169,8 @@ theorem mem_operations {w : Nat} {signature : DependencySignature w}
 def clientInstruction {w : ℕ} {signature : DependencySignature w}
     (client : OpenProgram signature)
     (environment : ImplementationEnvironment signature) (configuration : Configuration w)
-    (pc : ℕ) : OpenInstruction signature → RAM.Instruction (BitVec w) (BitVec w) Empty
+    (pc : ℕ) : OpenInstruction signature →
+      RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w)
   | .core instruction => instruction
   | .call op _ _ _ =>
       .setAddress (.immediate (BitVec.ofNat w pc)) configuration.jumpRegister
@@ -185,7 +187,7 @@ def clientCode {w : ℕ} {signature : DependencySignature w} (client : OpenProgr
 def dispatcherInstruction {w : ℕ} {signature : DependencySignature w}
     (configuration : Configuration w) (position : ℕ)
     (pc : Nat) (instruction : OpenInstruction signature) :
-    RAM.Instruction (BitVec w) (BitVec w) Empty :=
+    RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w) :=
   let equalTarget := match instruction with
     | .core _ => position + 1
     | .call _ _ _ _ => position + 1
@@ -196,7 +198,7 @@ def dispatcherInstruction {w : ℕ} {signature : DependencySignature w}
 def dispatcherCleanup {w : Nat} {signature : DependencySignature w}
     (configuration : Configuration w) (position : Nat)
     (instruction : OpenInstruction signature) :
-    RAM.Instruction (BitVec w) (BitVec w) Empty :=
+    RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w) :=
   let next := match instruction with
     | .core _ => position + 1
     | .call _ _ _ next => next
@@ -362,7 +364,7 @@ theorem operation_end_le_dispatcher {w : Nat} {signature : DependencySignature w
 theorem clientCode_targets_lt {w : Nat} {signature : DependencySignature w}
     (client : OpenProgram signature) (environment : ImplementationEnvironment signature)
     (configuration : Configuration w) (clientValid : client.Valid)
-    {instruction : RAM.Instruction (BitVec w) (BitVec w) Empty}
+    {instruction : RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w)}
     (member : instruction ∈ clientCode client environment configuration)
     {target : Nat} (successor : target ∈ instruction.successors) :
     target < (link client environment configuration).length := by
@@ -385,18 +387,17 @@ theorem clientCode_targets_lt {w : Nat} {signature : DependencySignature w}
 
 /-- Every relocated callee instruction targets its own body or the shared dispatcher. -/
 theorem relocate_successor {w : Nat} (base dispatcher : Nat)
-    (original : RAM.Instruction (BitVec w) (BitVec w) Empty) {target : Nat}
+    (original : RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w)) {target : Nat}
     (successor : target ∈ (relocateInstruction base dispatcher original).successors) :
     target = dispatcher ∨
       ∃ localTarget, localTarget ∈ original.successors ∧ target = base + localTarget := by
-  cases original <;>
-    simp_all [relocateInstruction, RAM.Instruction.successors] <;> aesop
+  cases original <;> simp_all [relocateInstruction, RAM.Instruction.successors]
 
 /-- Every relocated callee instruction targets its own body or the shared dispatcher. -/
 theorem implementationBodies_targets_lt {w : Nat} {signature : DependencySignature w}
     (client : OpenProgram signature) (environment : ImplementationEnvironment signature)
     (configuration : Configuration w)
-    {instruction : RAM.Instruction (BitVec w) (BitVec w) Empty}
+    {instruction : RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w)}
     (member : instruction ∈
       (operations signature).flatMap (implementationBody client environment configuration))
     {target : Nat} (successor : target ∈ instruction.successors) :
@@ -440,7 +441,7 @@ theorem dispatcherEntries_targets_lt {w : Nat} {signature : DependencySignature 
       target < clientLength)
     (clientBelow : clientLength ≤ limit)
     (slotsBelow : base + 2 * (start + client.length) + 1 ≤ limit)
-    {instruction : RAM.Instruction (BitVec w) (BitVec w) Empty}
+    {instruction : RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w)}
     (member : instruction ∈ dispatcherEntries configuration base start client)
     {target : Nat} (successor : target ∈ instruction.successors) :
     target < limit := by
@@ -474,7 +475,7 @@ theorem dispatcherEntries_targets_lt {w : Nat} {signature : DependencySignature 
 theorem dispatcherCode_targets_lt {w : Nat} {signature : DependencySignature w}
     (client : OpenProgram signature) (environment : ImplementationEnvironment signature)
     (configuration : Configuration w) (clientValid : client.Valid)
-    {instruction : RAM.Instruction (BitVec w) (BitVec w) Empty}
+    {instruction : RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w)}
     (member : instruction ∈ dispatcherCode client environment configuration)
     {target : Nat} (successor : target ∈ instruction.successors) :
     target < (link client environment configuration).length := by
@@ -512,7 +513,7 @@ theorem link_valid {w : Nat} {signature : DependencySignature w}
 theorem link_fetch_implementation {w : Nat} {signature : DependencySignature w}
     (client : OpenProgram signature) (environment : ImplementationEnvironment signature)
     (configuration : Configuration w) (op : signature.Op) (pc : Nat)
-    (instruction : RAM.Instruction (BitVec w) (BitVec w) Empty)
+    (instruction : RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w))
     (fetch : (environment.implementation op).module.code[pc]? = some instruction) :
     (link client environment configuration)[operationBase client environment op + pc]? =
       some (relocateInstruction (operationBase client environment op)

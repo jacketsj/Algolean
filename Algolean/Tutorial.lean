@@ -200,6 +200,19 @@ are themselves finite templates, and randomized relative links must refine the s
 to an ordinary closed randomized program. Exact-uniform real sampling remains an explicitly
 stronger exact-real profile.
 
+The ordinary Word RAM's data and address banks are connected only through sealed instructions.
+A loaded word becomes an address in one charged step; address multiplication is also explicit.
+Typed fixed-stride accessors compile to multiply-and-add instructions and require a no-wrap proof.
+Callable ABIs prove their regions realizable. A general `ProcedureCertificate` may retain changes
+in declared scratch, while `RestoringProcedureCertificate` states that the final memory is exactly
+the canonical output overwrite. Neither certificate hides a subroutine in one host-language step.
+
+For reusable structured exact-real code, `StructuredRealRAM.CanonicalLayout` contains only a closed
+layout term. Compact real/natural arrays and named dense, sparse, indexed, and graph formats expose
+their physical representations. `MachineProblem.HasAlgorithmBy` permits an exact bound over the
+structured input. Structured procedure contracts, relative call traces, and the shared-body linker
+produce a finite core program; external oracle profiles remain visibly different dependencies.
+
 Use `MachineProblem.HasNonuniformFamily` only for size-indexed code and provide separate
 instruction-count and full-description-size bounds. Full description size charges natural and
 rational literals, register indices, and jump targets.
@@ -225,7 +238,9 @@ Applications needing exact continuous randomness should use the separately named
 `UniformRealRandomizedMachineProblem.HasMonteCarloAlgorithm`. Its `sampleUniform` instruction
 draws from a hidden product source of exact uniform `[0,1]` values. This is explicitly a stronger
 machine than the random-bit RAM; a Gaussian or other distribution is not silently treated as the
-same primitive.
+same primitive. Its certificate proves that the success event is measurable. The core structured
+profile has no floor, real-to-natural, or real-to-address operation; these belong only to separately
+named stronger profiles with explicitly documented domain behavior.
 
 `OracleMachineProblem.HasOracleAlgorithm` fixes an `OracleInterface` before the program witness:
 typed queries and dependent answers, canonical layouts, answer validity, and named query cost.

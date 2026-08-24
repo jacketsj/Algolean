@@ -35,6 +35,7 @@ def dependencyContract : ProcedureContract 8 where
   pre _ := True
   post _ _ := True
   inputFits _ _ := by simp [WordLayout.Fits]
+  outputFits _ _ _ _ := by simp [WordLayout.Fits]
 
 def dependencyBound : ProcedureBound dependencyContract := fun _ ↦ 1
 
@@ -133,7 +134,7 @@ open ContractModule
 def dependencyProgram : Program 8 := [.halt (.immediate 0)]
 
 def dependencyProcedureCertificate :
-    ProcedureCertificate dependencyContract dependencyBound where
+    RestoringProcedureCertificate dependencyContract dependencyBound where
   module := ⟨dependencyProgram, 0⟩
   calling := {
     inputRegion := ⟨0⟩
@@ -141,6 +142,32 @@ def dependencyProcedureCertificate :
     scratchOwned := fun _ ↦ False
     registerOwned := fun _ ↦ False
     callOverhead := 0 }
+  callingRealizes := by
+    refine {
+      inputFitsAt := ?_
+      outputFitsAt := ?_
+      inputOutputPolicy := ?_
+      scratchDisjointOutput := ?_ }
+    · intro input validInput
+      cases input
+      change WordLayout.unit.FitsAt ⟨0⟩ ()
+      simp [WordLayout.FitsAt, WordLayout.Fits, WordLayout.footprintWords,
+        WordLayout.encode]
+    · intro input output validInput correct
+      cases input
+      cases output
+      change WordLayout.unit.FitsAt ⟨0⟩ ()
+      simp [WordLayout.FitsAt, WordLayout.Fits, WordLayout.footprintWords,
+        WordLayout.encode]
+    · intro input output validInput correct
+      cases input
+      cases output
+      change RepresentationsDisjoint WordLayout.unit ⟨0⟩ ()
+        WordLayout.unit ⟨0⟩ ()
+      simp [RepresentationsDisjoint, WordLayout.Occupies,
+        WordLayout.footprintWords, WordLayout.encode]
+    · intro input output validInput correct address occupied
+      simp
   valid := by
     constructor
     · intro pc instruction fetch target member
@@ -162,16 +189,27 @@ def dependencyProcedureCertificate :
         simp [stepCosted, costedSemantics, RAM.CostedSemantics.step,
           RAM.CostedSemantics.unit, dependencyProgram, RAM.execute,
           RAM.Operand.eval, WordRAM.ops]) }
-    refine ⟨run, represented, le_rfl, ?_, ?_⟩
-    · constructor
-      · intro address _ _ _
-        rfl
-      · intro register _
-        rfl
-    · exact (RelativeClientModule.unitWriteAt _ _).symm
+    refine ⟨run, represented, le_rfl, ?_⟩
+    constructor
+    · intro address _ _ _
+      rfl
+    · intro register _
+      rfl
+  restoringCorrect input validInput initial represented := by
+    cases input
+    let run : ProcedureRun ⟨dependencyProgram, 0⟩ initial := {
+      final := initial
+      result := 0
+      cost := 1
+      steps := 1
+      trace := RAM.HaltingTrace.halt (by
+        simp [stepCosted, costedSemantics, RAM.CostedSemantics.step,
+          RAM.CostedSemantics.unit, dependencyProgram, RAM.execute,
+          RAM.Operand.eval, WordRAM.ops]) }
+    exact ⟨run, represented, le_rfl, (RelativeClientModule.unitWriteAt _ _).symm⟩
 
 theorem dependency_exists : HasProcedure dependencyContract dependencyBound :=
-  ⟨dependencyProcedureCertificate⟩
+  ⟨dependencyProcedureCertificate.toProcedureCertificate⟩
 
 def implementations : ImplementationEnvironment signature where
   implementation _ := dependencyProcedureCertificate
@@ -205,17 +243,25 @@ def compatibility :
       cases op
       have pcBelow := List.getElem?_eq_some_iff.mp fetch |>.1
       have pcBelow' : pc < 2 := by simpa [clientProgram] using pcBelow
-      interval_cases pc <;> simp [clientProgram] at fetch
-      rcases fetch with ⟨rfl, rfl, rfl, rfl⟩
-      rfl
+      interval_cases pc
+      · change some (OpenInstruction.call (signature := signature) () ⟨0⟩ ⟨0⟩ 1) =
+          some (OpenInstruction.call (signature := signature) ()
+            inputRegion outputRegion next) at fetch
+        cases fetch
+        rfl
+      · simp [clientProgram] at fetch
     · intro pc op inputRegion outputRegion next fetch
       change Unit at op
       cases op
       have pcBelow := List.getElem?_eq_some_iff.mp fetch |>.1
       have pcBelow' : pc < 2 := by simpa [clientProgram] using pcBelow
-      interval_cases pc <;> simp [clientProgram] at fetch
-      rcases fetch with ⟨rfl, rfl, rfl, rfl⟩
-      rfl
+      interval_cases pc
+      · change some (OpenInstruction.call (signature := signature) () ⟨0⟩ ⟨0⟩ 1) =
+          some (OpenInstruction.call (signature := signature) ()
+            inputRegion outputRegion next) at fetch
+        cases fetch
+        rfl
+      · simp [clientProgram] at fetch
 
 theorem overheadBound (input : clientProblem.Input) (validInput : clientProblem.pre input)
     (final : Memory 8) (result : BitVec 8) (cost : Nat)
@@ -296,12 +342,8 @@ theorem client_unconditional : clientProblem.HasAlgorithmBy linkedBound :=
   concreteLink.hasAlgorithm
 
 def dependencyPublication :
-    Audit.ProcedurePublication dependencyContract dependencyBound where
+    Audit.RestoringProcedurePublication dependencyContract dependencyBound where
   certificate := dependencyProcedureCertificate
-  instructionCount := dependencyProcedureCertificate.module.code.length
-  instructionCount_eq := rfl
-  descriptionSize := WordRAM.descriptionSize dependencyProcedureCertificate.module.code
-  descriptionSize_eq := rfl
   certificateName := ``dependencyProcedureCertificate
   contractName := ``dependencyContract
   boundName := ``dependencyBound

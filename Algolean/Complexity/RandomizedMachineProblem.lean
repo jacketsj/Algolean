@@ -366,6 +366,12 @@ noncomputable def SucceedsWithin (problem : BitRandomizedMachineProblem)
   ∃ (output : problem.Output) (run : SuccessfulRun problem program input source),
     problem.OutputRep output run.final ∧ problem.post input output ∧ run.cost ≤ bound
 
+/-- The hidden-source success event used by the probability statement. -/
+def SuccessEvent (problem : BitRandomizedMachineProblem)
+    (program : StructuredRealRAM.RandomBit.Program) (input : problem.Input)
+    (bound : StructuredRealRAM.RandomBit.Cost) : Set StructuredRealRAM.RandomBit.Source :=
+  {source | problem.SucceedsWithin program input source bound}
+
 /-- Probability of a source event under the one fixed iid fair product law. -/
 noncomputable def sourceProbability
     (event : StructuredRealRAM.RandomBit.Source → Prop) : ENNReal :=
@@ -382,7 +388,7 @@ noncomputable def MonteCarloSolvesWithin (problem : BitRandomizedMachineProblem)
   ∀ input, problem.pre input →
     (∀ source, problem.TerminatesWithin program input source
       (bound (problem.inputSize input))) ∧
-    sourceProbability (fun source ↦ problem.SucceedsWithin program input source
+    sourceProbability (problem.SuccessEvent program input
       (bound (problem.inputSize input))) ≥ 1 - (failure input : ENNReal)
 
 /-- Typed certificate for one fixed program in the sealed hidden-source profile. -/
@@ -393,6 +399,9 @@ structure MonteCarloAlgorithmCertificate (problem : BitRandomizedMachineProblem)
   program : StructuredRealRAM.RandomBit.Program
   /-- All successors remain in the program. -/
   valid : program.Valid
+  /-- The success event is measurable under the fixed fair product measure. -/
+  measurableSuccess : ∀ input, problem.pre input →
+    MeasurableSet (problem.SuccessEvent program input (bound (problem.inputSize input)))
   /-- Every-input resource and probability guarantee. -/
   solves : problem.MonteCarloSolvesWithin program bound failure
 
@@ -459,6 +468,8 @@ structure UniformRealRandomizedMachineProblem where
 
 namespace UniformRealRandomizedMachineProblem
 
+open MeasureTheory
+
 /-- Represented input-cell count. -/
 noncomputable def inputSize (problem : UniformRealRandomizedMachineProblem)
     (input : problem.Input) : ℕ :=
@@ -519,6 +530,13 @@ noncomputable def SucceedsWithin (problem : UniformRealRandomizedMachineProblem)
   ∃ (output : problem.Output) (run : SuccessfulRun problem program input source),
     problem.OutputRep output run.final ∧ problem.post input output ∧ run.cost ≤ bound
 
+/-- The source event whose measurability is required by every continuous-randomness certificate. -/
+def SuccessEvent (problem : UniformRealRandomizedMachineProblem)
+    (program : StructuredRealRAM.UniformReal.Program)
+    (input : problem.Input) (bound : StructuredRealRAM.UniformReal.Cost) :
+    Set StructuredRealRAM.UniformReal.Source :=
+  {source | problem.SucceedsWithin program input source bound}
+
 /-- Probability of an event under the fixed exact-uniform product law. -/
 noncomputable def sourceProbability
     (event : StructuredRealRAM.UniformReal.Source → Prop) : ENNReal :=
@@ -532,7 +550,7 @@ noncomputable def MonteCarloSolvesWithin (problem : UniformRealRandomizedMachine
   ∀ input, problem.pre input →
     (∀ source, problem.TerminatesWithin program input source
       (bound (problem.inputSize input))) ∧
-    sourceProbability (fun source ↦ problem.SucceedsWithin program input source
+    sourceProbability (problem.SuccessEvent program input
       (bound (problem.inputSize input))) ≥ 1 - (failure input : ENNReal)
 
 /-- Typed fixed-program certificate for exact continuous uniform randomness. -/
@@ -543,6 +561,9 @@ structure MonteCarloAlgorithmCertificate (problem : UniformRealRandomizedMachine
   program : StructuredRealRAM.UniformReal.Program
   /-- All successors remain in the program. -/
   valid : program.Valid
+  /-- The success event is measurable under the fixed product Borel measure. -/
+  measurableSuccess : ∀ input, problem.pre input →
+    MeasurableSet (problem.SuccessEvent program input (bound (problem.inputSize input)))
   /-- Every-input resource and probability guarantee. -/
   solves : problem.MonteCarloSolvesWithin program bound failure
 

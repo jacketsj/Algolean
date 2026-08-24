@@ -26,7 +26,7 @@ noncomputable section
 
 /-- One width-independent relative instruction. -/
 inductive UniformOpenInstruction (signature : UniformDependencySignature) where
-  | core (instruction : RAM.Instruction Nat Nat Empty)
+  | core (instruction : RAM.Instruction Nat Nat TemplateExtraInstruction)
   | call (op : signature.Op) (inputBase outputBase next : Nat)
 
 /-- One finite width-independent relative client. -/
@@ -51,8 +51,9 @@ def instantiate (w : Nat) : UniformOpenInstruction signature →
     (instruction.instantiate w).successors = instruction.successors := by
   cases instruction with
   | core instruction =>
-      cases instruction <;> try rfl
-      case extra impossible _ => exact Empty.elim impossible
+      cases instruction with
+      | extra extraInstruction _ => cases extraInstruction <;> rfl
+      | _ => rfl
   | call => rfl
 
 end UniformOpenInstruction

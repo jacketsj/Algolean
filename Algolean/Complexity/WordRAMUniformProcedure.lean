@@ -52,7 +52,7 @@ structure UniformProcedureCertificate (family : UniformProcedureContract) where
   program : UniformProgram
   entry : Nat
   calling : CallingConventionTemplate
-  certificateAt : (w : Nat) → ProcedureCertificate (family.contract w) (family.bound w)
+  certificateAt : (w : Nat) → RestoringProcedureCertificate (family.contract w) (family.bound w)
   code_eq : ∀ w, (certificateAt w).module.code = program.instantiate w
   entry_eq : ∀ w, (certificateAt w).module.entry = entry
   calling_eq : ∀ w, (certificateAt w).calling = calling.instantiate w

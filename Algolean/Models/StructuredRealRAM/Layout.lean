@@ -52,6 +52,20 @@ def after (region : Region) (footprint : Footprint) : Region :=
 
 end Region
 
+/-- Closed diagnostic tags for named physical structured-data formats. -/
+inductive DataTag where
+  | realArray | natArray | fixedStrideArray | indexedArray
+  | denseMatrix | denseTensor3 | denseTensor4
+  | sparseVector | cooMatrix | csrMatrix | dynamicBitSet
+  | permutation | labelPartition | parentPartition | parentForest
+  | vertexTable | edgeTable | dartTable
+  | directedEdgeList | undirectedDartList | csrGraph | adjacencyMatrixGraph
+deriving DecidableEq, Repr
+
+/-- Nominal wrapper whose tag is syntax-only and occupies no machine cells. -/
+structure Tagged (tag : DataTag) (alpha : Type) where
+  value : alpha
+
 /-- The pair of finite streams underlying a canonical representation. -/
 @[ext]
 structure Encoding where
@@ -79,7 +93,13 @@ inductive Layout : (alpha : Type) → Type 1 where
   | prod : Layout alpha → Layout beta → Layout (alpha × beta)
   | sum : Layout alpha → Layout beta → Layout (Sum alpha beta)
   | option : Layout alpha → Layout (Option alpha)
+  | list : Layout alpha → Layout (List alpha)
   | array : Layout alpha → Layout (Array alpha)
+  | vector (length : ℕ) : Layout alpha → Layout (Vector alpha length)
+  | finFun (size : ℕ) : Layout alpha → Layout (Fin size → alpha)
+  | tagged (tag : DataTag) : Layout alpha → Layout (Tagged tag alpha)
+  | realArray : Layout (Tagged .realArray (Array Real))
+  | natArray : Layout (Tagged .natArray (Array Nat))
   | subtype (predicate : alpha → Prop) : Layout alpha → Layout {value : alpha // predicate value}
 
 /--
@@ -110,7 +130,15 @@ def syntaxName : (layout : Layout alpha) → String
   | .prod left right => "prod(" ++ left.syntaxName ++ ", " ++ right.syntaxName ++ ")"
   | .sum left right => "sum(" ++ left.syntaxName ++ ", " ++ right.syntaxName ++ ")"
   | .option element => "option(" ++ element.syntaxName ++ ")"
+  | .list element => "list(length-delimited, " ++ element.syntaxName ++ ")"
   | .array element => "array(" ++ element.syntaxName ++ ")"
+  | .vector length element => "vector(" ++ toString length ++ ", " ++
+      element.syntaxName ++ ")"
+  | .finFun size element => "finFun(index-order, " ++ toString size ++ ", " ++
+      element.syntaxName ++ ")"
+  | .tagged tag base => "tagged(" ++ reprStr tag ++ ", " ++ base.syntaxName ++ ")"
+  | .realArray => "compactRealArray(length:nat,payload:real)"
+  | .natArray => "compactNatArray(length:nat,payload:nat)"
   | .subtype _ underlying => "subtype(" ++ underlying.syntaxName ++ ", proof-erased)"
 
 /-- Encode a list as length-delimited element chunks. -/
@@ -179,9 +207,19 @@ noncomputable def encode : (layout : Layout alpha) → alpha → Encoding
   | .option element, some value =>
       let encoding := encode element value
       ⟨encoding.reals, 1 :: encoding.nats⟩
+  | .list element, values =>
+      let body := encodeListWith (encode element) values
+      ⟨body.reals, values.length :: body.nats⟩
   | .array element, values =>
       let body := encodeListWith (encode element) values.toList
       ⟨body.reals, values.size :: body.nats⟩
+  | .vector _ element, values =>
+      encodeListWith (encode element) values.toArray.toList
+  | .finFun _ element, values =>
+      encodeListWith (encode element) (List.ofFn values)
+  | .tagged _ base, value => base.encode value.value
+  | .realArray, value => ⟨value.value.toList, [value.value.size]⟩
+  | .natArray, value => ⟨[], value.value.size :: value.value.toList⟩
   | .subtype _ underlying, value => encode underlying value.1
 
 /-- Fixed structural decoder, interpreted by recursion over closed `Layout` syntax. -/
@@ -226,6 +264,13 @@ noncomputable def decode : (layout : Layout alpha) → Encoding → Option alpha
   | .option element, ⟨reals, 1 :: nats⟩ =>
       (decode element ⟨reals, nats⟩).map some
   | .option _, _ => none
+  | .list element, encoding =>
+      match encoding.nats with
+      | count :: nats =>
+          match decodeListWith (decode element) count ⟨encoding.reals, nats⟩ with
+          | some (values, ⟨[], []⟩) => some values
+          | _ => none
+      | [] => none
   | .array element, encoding =>
       match encoding.nats with
       | count :: nats =>
@@ -233,6 +278,27 @@ noncomputable def decode : (layout : Layout alpha) → Encoding → Option alpha
           | some (values, ⟨[], []⟩) => some values.toArray
           | _ => none
       | [] => none
+  | .vector length element, encoding =>
+      match decodeListWith (decode element) length encoding with
+      | some (values, ⟨[], []⟩) =>
+          if hasLength : values.length = length then
+            some ⟨values.toArray, by simpa using hasLength⟩
+          else none
+      | _ => none
+  | .finFun size element, encoding =>
+      match decodeListWith (decode element) size encoding with
+      | some (values, ⟨[], []⟩) =>
+          if hasLength : values.length = size then
+            some (fun index => values[index])
+          else none
+      | _ => none
+  | .tagged tag base, encoding => (base.decode encoding).map Tagged.mk
+  | .realArray, ⟨reals, [count]⟩ =>
+      if reals.length = count then some ⟨reals.toArray⟩ else none
+  | .realArray, _ => none
+  | .natArray, ⟨[], count :: values⟩ =>
+      if values.length = count then some ⟨values.toArray⟩ else none
+  | .natArray, _ => none
   | .subtype predicate underlying, encoding => by
       classical
       exact match decode underlying encoding with
@@ -277,6 +343,9 @@ theorem decode_encode (layout : Layout alpha) (value : alpha) :
       cases value with
       | none => rfl
       | some value => simp [encode, decode, elementRoundTrip]
+  | list element elementRoundTrip =>
+      simp only [encode, decode]
+      rw [decodeListWith_encodeListWith _ _ elementRoundTrip]
   | array element elementRoundTrip =>
       simp only [encode, decode]
       rw [← Array.length_toList]
@@ -285,6 +354,31 @@ theorem decode_encode (layout : Layout alpha) (value : alpha) :
         | some (decoded, ⟨[], []⟩) => some decoded.toArray
         | _ => none) = some value
       rw [decodeListWith_encodeListWith _ _ elementRoundTrip]
+  | vector length element elementRoundTrip =>
+      simp only [encode, decode]
+      have decoded : decodeListWith (decode element) length
+          (encodeListWith (encode element) value.toArray.toList) =
+          some (value.toArray.toList, ⟨[], []⟩) := by
+        simpa using decodeListWith_encodeListWith _ _ elementRoundTrip value.toArray.toList
+      rw [decoded]
+      simp
+  | finFun size element elementRoundTrip =>
+      simp only [encode, decode]
+      have decoded : decodeListWith (decode element) size
+          (encodeListWith (encode element) (List.ofFn value)) =
+          some (List.ofFn value, ⟨[], []⟩) := by
+        simpa using decodeListWith_encodeListWith _ _ elementRoundTrip (List.ofFn value)
+      rw [decoded]
+      simp
+  | tagged tag base baseRoundTrip =>
+      rcases value with ⟨value⟩
+      simp [encode, decode, baseRoundTrip]
+  | realArray =>
+      rcases value with ⟨values⟩
+      simp [encode, decode]
+  | natArray =>
+      rcases value with ⟨values⟩
+      simp [encode, decode]
   | subtype predicate underlying underlyingRoundTrip =>
       rcases value with ⟨value, property⟩
       simp only [encode, decode, underlyingRoundTrip]

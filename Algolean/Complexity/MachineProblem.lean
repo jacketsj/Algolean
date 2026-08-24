@@ -6,7 +6,7 @@ Authors: Algolean contributors
 
 module
 
-public import Algolean.Models.StructuredRealRAM.Layout
+public import Algolean.Models.StructuredRealRAM.CanonicalLayout
 public import Algolean.Compiler.CFG
 
 /-!
@@ -44,6 +44,20 @@ structure MachineProblem where
   pre : Input → Prop
   /-- Independent mathematical postcondition. -/
   post : Input → Output → Prop
+
+/-- Resolve model-specific canonical layouts once when constructing a problem. -/
+def MachineProblem.ofCanonical (Input Output : Type)
+    [StructuredRealRAM.CanonicalLayout Input]
+    [StructuredRealRAM.CanonicalLayout Output]
+    (outputRegion : Region) (pre : Input → Prop) (post : Input → Output → Prop) :
+    MachineProblem where
+  Input := Input
+  Output := Output
+  inputLayout := StructuredRealRAM.layoutOf Input
+  outputLayout := StructuredRealRAM.layoutOf Output
+  outputRegion := outputRegion
+  pre := pre
+  post := post
 
 namespace MachineProblem
 
@@ -94,6 +108,38 @@ noncomputable def SolvesWithin (problem : MachineProblem)
     (program : StructuredRealRAM.Program) (bound : ℕ → StructuredRealRAM.Cost) : Prop :=
   ∀ input, problem.pre input →
     SolvesInputWithin problem program input (bound (problem.inputSize input))
+
+/-- One fixed program with an exact theorem-side bound depending on the structured input. -/
+noncomputable def SolvesWithinBy (problem : MachineProblem)
+    (program : StructuredRealRAM.Program)
+    (bound : problem.Input → StructuredRealRAM.Cost) : Prop :=
+  ∀ input, problem.pre input → SolvesInputWithin problem program input (bound input)
+
+/-- Publishable fixed-program certificate with an exact structured-input bound. -/
+structure FixedAlgorithmCertificateBy (problem : MachineProblem)
+    (bound : problem.Input → StructuredRealRAM.Cost) where
+  program : StructuredRealRAM.Program
+  valid : program.Valid
+  solves : problem.SolvesWithinBy program bound
+
+/-- Preferred exact input-dependent existential structured-machine claim. -/
+noncomputable def HasAlgorithmBy (problem : MachineProblem)
+    (bound : problem.Input → StructuredRealRAM.Cost) : Prop :=
+  Nonempty (FixedAlgorithmCertificateBy problem bound)
+
+namespace FixedAlgorithmCertificateBy
+
+/-- Weaken only the theorem-side bound; code and executions are unchanged. -/
+noncomputable def weaken (certificate : FixedAlgorithmCertificateBy problem oldBound)
+    (larger : ∀ input, oldBound input ≤ newBound input) :
+    FixedAlgorithmCertificateBy problem newBound where
+  program := certificate.program
+  valid := certificate.valid
+  solves input valid := by
+    rcases certificate.solves input valid with ⟨output, run, represented, correct, cost⟩
+    exact ⟨output, run, represented, correct, cost.trans (larger input)⟩
+
+end FixedAlgorithmCertificateBy
 
 /--
 Preferred deterministic existential algorithm claim: one valid finite program is fixed before all

@@ -42,7 +42,7 @@ instance : IsProbabilityMeasure sourceLaw := by
 
 /-- Closed randomized profile syntax. -/
 inductive Instruction (w : Nat) where
-  | core (instruction : RAM.Instruction (BitVec w) (BitVec w) Empty)
+  | core (instruction : RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w))
   | randBit (destination : RAM.AddressOperand (BitVec w)) (next : Nat)
 
 abbrev Program (w : Nat) := List (Instruction w)
@@ -55,7 +55,7 @@ def successors : Instruction w → List Nat
 
 def descriptionSize : Instruction w → Nat
   | .core instruction => 1 + instruction.descriptionSize (fun _ ↦ w) (fun _ ↦ w)
-      (fun impossible : Empty ↦ nomatch impossible)
+      ExtraInstruction.descriptionSize
   | .randBit destination next =>
       1 + destination.descriptionSize (fun _ ↦ w) + RAM.natDescriptionSize next
 
@@ -113,7 +113,7 @@ def execute (source : Source) (instruction : Instruction w)
     (configuration : Configuration w) : StepObservation w :=
   match instruction with
   | .core instruction =>
-      match RAM.execute (WordRAM.ops w) RAM.noExtra instruction configuration.memory with
+      match RAM.execute (WordRAM.ops w) WordRAM.evalExtra instruction configuration.memory with
       | .running next => ⟨.running ⟨next.pc, next.memory, configuration.randomCursor⟩, .core⟩
       | .halted memory result =>
           ⟨.halted memory result configuration.randomCursor, .core⟩

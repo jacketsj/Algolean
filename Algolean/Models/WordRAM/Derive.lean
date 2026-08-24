@@ -18,10 +18,12 @@ existing rich structure is deliberately not installed as a free machine operatio
 -/
 
 /-- Declare a name for an already structural machine payload. -/
+@[nolint topNamespace]
 syntax (name := wordRAMPayloadAliasCmd)
   "wordram_payload " ident " := " term : command
 
 /-- Declare a proof-erased refinement of an already structural machine payload. -/
+@[nolint topNamespace]
 syntax (name := wordRAMPayloadSubtypeCmd)
   "wordram_payload " ident " : " term " where " ident " => " term : command
 

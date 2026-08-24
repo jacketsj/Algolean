@@ -25,7 +25,8 @@ namespace Algolean.Algorithms.WordRAM
 structure MachineEmbedding (sourceWidth targetWidth : Nat) where
   sourceProfile : Profile sourceWidth := standardProfile sourceWidth
   targetProfile : Profile targetWidth := standardProfile targetWidth
-  liftInstruction : RAM.Instruction (BitVec sourceWidth) (BitVec sourceWidth) Empty →
+  liftInstruction :
+    RAM.Instruction (BitVec sourceWidth) (BitVec sourceWidth) (ExtraInstruction sourceWidth) →
     Program targetWidth
   liftProgram : Program sourceWidth → Program targetWidth
   liftProgram_eq : ∀ program,

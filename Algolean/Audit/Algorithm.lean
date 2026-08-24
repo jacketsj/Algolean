@@ -475,6 +475,7 @@ def MonteCarloAlgorithmPublication.summary
   "Random source: hidden, lengthless iid fair-bit product source\n" ++
   "Random source cursor observable by program: no\n" ++
   "Random draw: one closed randBit instruction, charged in the output trace\n" ++
+  "Success event measurability: carried by the typed certificate\n" ++
   "Termination/resource quantification: every source realization\n" ++
   "Bound (includes random draws): " ++ toString publication.boundName ++ "\n" ++
   "Failure probability: " ++ toString publication.failureName ++ " (certified at most one)\n" ++
@@ -499,6 +500,7 @@ def UniformRealMonteCarloAlgorithmPublication.summary
   "Random source: hidden, lengthless product of exact uniform [0,1] samples\n" ++
   "Randomness strength: exact continuous primitive; stronger than random-bit RAM\n" ++
   "Random draw: one closed sampleUniform instruction charged in the output trace\n" ++
+  "Success event measurability: carried by the typed certificate\n" ++
   "Bound (includes random draws): " ++ toString publication.boundName ++ "\n" ++
   "Failure probability: " ++ toString publication.failureName ++ " (certified at most one)\n" ++
   "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++

@@ -123,6 +123,7 @@ inductive Instruction where
   | nset (source : NatOperand) (destinationRegister next : ℕ)
   | nadd (left right : NatOperand) (destinationRegister next : ℕ)
   | nsub (left right : NatOperand) (destinationRegister next : ℕ)
+  | nmul (left right : NatOperand) (destinationRegister next : ℕ)
   | nload (addressRegister destinationRegister next : ℕ)
   | nstore (source : NatOperand) (addressRegister next : ℕ)
   | rcompare (left right : RealOperand) (less equal greater : ℕ)
@@ -215,7 +216,7 @@ namespace Instruction
 def successors : Instruction → List ℕ
   | .rset _ _ next | .radd _ _ _ next | .rsub _ _ _ next | .rmul _ _ _ next
   | .rdiv _ _ _ next | .rneg _ _ next | .nset _ _ next | .nadd _ _ _ next
-  | .nsub _ _ _ next | .nload _ _ next | .nstore _ _ next => [next]
+  | .nsub _ _ _ next | .nmul _ _ _ next | .nload _ _ next | .nstore _ _ next => [next]
   | .rcompare _ _ less equal greater | .ncompare _ _ less equal greater =>
       [less, equal, greater]
   | .jump target => [target]
@@ -229,7 +230,7 @@ def cost : Instruction → Cost
       Cost.ofFields 1 (left.reads + right.reads) 1 1 0 0 0 0 0
   | .rneg source _ _ => Cost.ofFields 1 source.reads 1 1 0 0 0 0 0
   | .nset source _ _ => Cost.ofFields 1 0 0 0 0 source.reads 0 0 0
-  | .nadd left right _ _ | .nsub left right _ _ =>
+  | .nadd left right _ _ | .nsub left right _ _ | .nmul left right _ _ =>
       Cost.ofFields 1 0 0 0 0 (left.reads + right.reads) 0 1 0
   | .nload _ _ _ => Cost.ofFields 1 0 0 0 0 1 0 0 0
   | .nstore source _ _ => Cost.ofFields 1 0 0 0 0 source.reads 1 0 0
@@ -319,6 +320,9 @@ def encodeInstruction : Instruction → List Bool
         encodeNat less ++ encodeNat equal ++ encodeNat greater
   | .jump target => [true, true, false, true] ++ encodeNat target
   | .halt result => [true, true, true, false] ++ encodeRealOperand result
+  | .nmul left right destination next =>
+      [true, true, true, true] ++ encodeNatOperand left ++ encodeNatOperand right ++
+        encodeNat destination ++ encodeNat next
 
 /-- Concatenate the self-delimiting encodings of a list of instructions. -/
 def encodeInstructions : List Instruction → List Bool
@@ -519,6 +523,12 @@ def decodeInstruction : List Bool → Option (Instruction × List Bool)
   | true :: true :: true :: false :: bits => do
       let (result, rest) ← decodeRealOperand bits
       pure (.halt result, rest)
+  | true :: true :: true :: true :: bits => do
+      let (left, bits) ← decodeNatOperand bits
+      let (right, bits) ← decodeNatOperand bits
+      let (destination, bits) ← decodeNat bits
+      let (next, rest) ← decodeNat bits
+      pure (.nmul left right destination next, rest)
   | _ => none
 
 @[simp]
@@ -615,6 +625,7 @@ noncomputable def execute (instruction : Instruction) (memory : Memory) : StepOb
     | .nset source destination next => writeReg (nat source) destination next
     | .nadd left right destination next => writeReg (nat left + nat right) destination next
     | .nsub left right destination next => writeReg (nat left - nat right) destination next
+    | .nmul left right destination next => writeReg (nat left * nat right) destination next
     | .nload address destination next =>
         writeReg (memory.natMem (memory.natReg address)) destination next
     | .nstore source address next =>

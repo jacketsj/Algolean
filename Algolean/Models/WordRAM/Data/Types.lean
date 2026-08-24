@@ -159,17 +159,26 @@ end MultiwordRat
 /-- Sequential variable-footprint array without an offset index. -/
 abbrev PackedArray (w : ℕ) (alpha : Type) := Tagged .packedArray (WordArray w alpha)
 
-/-- Offset-indexed variable-footprint array.  Offsets and values are stored separately. -/
-def IndexedArray.Valid (payload : WordArray w (BitVec w) × WordArray w alpha) : Prop :=
+/--
+Offset-indexed variable-footprint array validity.  Every boundary is tied to the represented
+element footprint, rather than merely required to be monotone.
+-/
+def IndexedArray.Valid [Inhabited alpha] (elementWords : alpha → Nat)
+    (payload : WordArray w (BitVec w) × WordArray w alpha) : Prop :=
   payload.1.size = payload.2.size + 1 ∧
     (payload.1.data.getD 0 0).toNat = 0 ∧
-    (∀ i, i + 1 < payload.1.size →
-      (payload.1.data.getD i 0).toNat ≤ (payload.1.data.getD (i + 1) 0).toNat) ∧
+    (∀ i, i < payload.2.size →
+      (payload.1.data.getD (i + 1) 0).toNat =
+        (payload.1.data.getD i 0).toNat + elementWords (payload.2.data.getD i default)) ∧
+    (payload.1.data.getD payload.2.size 0).toNat =
+      (payload.2.data.toList.map elementWords).sum ∧
     (payload.1.data.getD payload.2.size 0).toNat < 2 ^ w
 
-abbrev IndexedArray (w : ℕ) (alpha : Type) :=
+abbrev IndexedArray (w : ℕ) (alpha : Type) [Inhabited alpha]
+    (elementWords : alpha → Nat) :=
   Tagged .indexedArray
-    {payload : WordArray w (BitVec w) × WordArray w alpha // IndexedArray.Valid payload}
+    {payload : WordArray w (BitVec w) × WordArray w alpha //
+      IndexedArray.Valid elementWords payload}
 
 /-- Row-major runtime matrix payload predicate. -/
 def DenseMatrix.Valid (payload : BitVec w × BitVec w × WordArray w alpha) : Prop :=

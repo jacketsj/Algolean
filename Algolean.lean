@@ -2,6 +2,7 @@ module  -- shake: keep-all --deprecated_module: ignore
 
 public import Algolean.AddWriter.Basic
 public import Algolean.Audit.Algorithm
+public import Algolean.Audit.StructuredRealRAM
 public import Algolean.Audit.WordRAM
 public import Algolean.Algorithms.Circuits.FanInTwo.LogAnd
 public import Algolean.Algorithms.GaussianJL
@@ -22,6 +23,8 @@ public import Algolean.Complexity.OracleMachineProblem
 public import Algolean.Complexity.PolytimeBasicClasses
 public import Algolean.Complexity.RAMProblem
 public import Algolean.Complexity.RandomizedMachineProblem
+public import Algolean.Complexity.StructuredRealRAMProcedure
+public import Algolean.Complexity.StructuredRealRAMRelative
 public import Algolean.Complexity.WordRAMProcedure
 public import Algolean.Complexity.WordRAMRelative
 public import Algolean.Complexity.WordRAMLinking
@@ -34,6 +37,8 @@ public import Algolean.Complexity.WordRAMUniformLinking
 public import Algolean.Complexity.WordRAMUniformProcedure
 public import Algolean.Compiler.CFG
 public import Algolean.Compiler.StructuredBuilder
+public import Algolean.Compiler.StructuredRealRAMLinker
+public import Algolean.Compiler.StructuredRealRAMLinkerCorrectness
 public import Algolean.Compiler.WordRAMLinker
 public import Algolean.Compiler.WordRAMLinkerCorrectness
 public import Algolean.Compiler.WordRAMEmbedding
@@ -64,10 +69,13 @@ public import Algolean.Models.RealRAM
 public import Algolean.Models.RealRAM.ContinuousRandom
 public import Algolean.Models.RealRAM.Extensions
 public import Algolean.Models.StructuredRealRAM.Core
+public import Algolean.Models.StructuredRealRAM.CanonicalLayout
+public import Algolean.Models.StructuredRealRAM.Data
 public import Algolean.Models.StructuredRealRAM.Layout
 public import Algolean.Models.StructuredRealRAM.Oracle
 public import Algolean.Models.StructuredRealRAM.Random
 public import Algolean.Models.StructuredRealRAM.UniformReal
+public import Algolean.Models.StructuredRealRAM.TypedRegion
 public import Algolean.Models.ReadOnlyVec
 public import Algolean.Models.ReadWriteVec
 public import Algolean.Models.RobertsonWebb

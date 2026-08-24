@@ -166,8 +166,167 @@ example : ((255 : BitVec 8) + 1).toNat = 0 ∧ 255 + 1 ≠ ((255 : BitVec 8) + 1
 
 /-- Fixed indexing compiles to an explicit, exactly charged first-order address plan. -/
 example :
-    ((AddressPlan.fixedIndex (w := 8) 4 1 3 0).compile 1 10 20).length = 5 := by
+    ((AddressPlan.fixedIndex (w := 8) 4 1 3 0).compile 1 10 20).length = 2 := by
   decide
+
+/-- The semantic address is exact only under an explicit no-wrap obligation. -/
+example (memory : Memory 8)
+    (fits : (AddressPlan.fixedIndex (w := 8) 4 1 3 0).NoWrap memory) :
+    ((AddressPlan.fixedIndex (w := 8) 4 1 3 0).eval memory).toNat =
+      (AddressPlan.fixedIndex (w := 8) 4 1 3 0).evalNat memory :=
+  AddressPlan.eval_toNat_eq _ _ fits
+
+#check AddressPlan.fixedIndex_trace
+#check indirectLookup_trace
+
+namespace AdversarialProcedureABI
+
+def contract : ProcedureContract 8 where
+  widthAtLeastTwo := by decide
+  Input := Bool
+  Output := Bool
+  inputLayout := .bool
+  outputLayout := .bool
+  pre _ := True
+  post _ _ := True
+  inputFits _ _ := trivial
+  outputFits _ _ _ _ := trivial
+
+def overlapping : CallingConvention 8 where
+  inputRegion := ⟨0⟩
+  outputRegion := ⟨0⟩
+  scratchOwned _ := False
+  registerOwned _ := False
+  callOverhead := 0
+  aliasingPolicy := .disjoint
+
+/-- An impossible disjoint ABI is rejected before any code-correctness proof can begin. -/
+theorem not_realizable : ¬ overlapping.Realizes contract := by
+  intro realizes
+  have disjoint := realizes.inputOutputPolicy false false trivial trivial
+  change RepresentationsDisjoint WordLayout.bool (⟨0⟩ : Region 8) false
+    WordLayout.bool ⟨0⟩ false at disjoint
+  have inputOccupies : WordLayout.bool.Occupies (⟨0⟩ : Region 8) false
+      (0 : BitVec 8) := by
+    exact ⟨0, by simp [WordLayout.footprintWords, WordLayout.encode], by simp⟩
+  have outputOccupies : WordLayout.bool.Occupies (⟨0⟩ : Region 8) false
+      (0 : BitVec 8) := by
+    exact ⟨0, by simp [WordLayout.footprintWords, WordLayout.encode], by simp⟩
+  exact disjoint 0 ⟨inputOccupies, outputOccupies⟩
+
+end AdversarialProcedureABI
+
+namespace ActualOutputFrame
+
+def contract : ProcedureContract 8 where
+  widthAtLeastTwo := by decide
+  Input := Unit
+  Output := Option Bool
+  inputLayout := .unit
+  outputLayout := .option .bool
+  pre _ := True
+  post _ _ := True
+  inputFits _ _ := trivial
+  outputFits _ output _ _ := by
+    cases output with
+    | none => trivial
+    | some value =>
+        change True ∧ (WordLayout.bool.encode value).length + 1 ≤ 2 ^ 8
+        constructor
+        · trivial
+        · cases value <;> simp [WordLayout.encode]
+
+def calling : CallingConvention 8 where
+  inputRegion := ⟨10⟩
+  outputRegion := ⟨0⟩
+  scratchOwned _ := False
+  registerOwned _ := False
+  callOverhead := 0
+
+def before : Memory 8 := ⟨fun _ ↦ 0, fun _ ↦ 0⟩
+
+def after : Memory 8 :=
+  ⟨fun address ↦ if address = 1 then 1 else 0, fun _ ↦ 0⟩
+
+/-- The larger actual output footprint exempts its second payload word. -/
+example : PreservesFrame contract calling () (some true) before after := by
+  constructor
+  · intro address inputFree scratchFree outputFree
+    by_cases atOne : address = (1 : BitVec 8)
+    · subst address
+      change ¬ (WordLayout.option WordLayout.bool).Occupies (⟨0⟩ : Region 8)
+        (some true) (1 : BitVec 8) at outputFree
+      apply (outputFree ?_).elim
+      simp only [WordLayout.Occupies, WordLayout.footprintWords, WordLayout.encode]
+      exact ⟨1, by decide, by decide⟩
+    · change (if address = (1 : BitVec 8) then 1 else 0) = 0
+      rw [if_neg atOne]
+  · intros
+    rfl
+
+/-- The same change is outside the smaller `none` footprint and must be preserved. -/
+example : ¬ PreservesFrame contract calling () none before after := by
+  intro frame
+  have preserved := frame.1 (1 : BitVec 8) (by
+    simp [contract, WordLayout.Occupies, WordLayout.footprintWords, WordLayout.encode])
+    (by simp [calling]) (by
+      simp [contract, calling, WordLayout.Occupies, WordLayout.footprintWords,
+        WordLayout.encode])
+  simp [before, after] at preserved
+
+def scratchCalling : CallingConvention 8 where
+  inputRegion := ⟨10⟩
+  outputRegion := ⟨20⟩
+  scratchOwned address := address = 1
+  registerOwned _ := False
+  callOverhead := 0
+
+def unitContract : ProcedureContract 8 where
+  widthAtLeastTwo := by decide
+  Input := Unit
+  Output := Unit
+  inputLayout := .unit
+  outputLayout := .unit
+  pre _ := True
+  post _ _ := True
+  inputFits _ _ := trivial
+  outputFits _ _ _ _ := trivial
+
+/-- A general frame permits declared scratch changes. -/
+example : PreservesFrame
+    unitContract scratchCalling () () before after := by
+  constructor
+  · intro address inputFree scratchFree outputFree
+    by_cases atOne : address = (1 : BitVec 8)
+    · subst address
+      exact (scratchFree rfl).elim
+    · change (if address = (1 : BitVec 8) then 1 else 0) = 0
+      rw [if_neg atOne]
+  · intros
+    rfl
+
+/-- A restoring guarantee would reject that residual scratch change. -/
+example : after ≠ WordLayout.unit.writeAt ⟨20⟩ () before := by
+  intro equal
+  have atOne := congrArg (fun memory : Memory 8 ↦ memory.data 1) equal
+  simp [after, before, WordLayout.writeAt, WordLayout.footprintWords,
+    WordLayout.encode] at atOne
+
+end ActualOutputFrame
+
+def malformedOffsets : WordArray 8 (BitVec 8) × WordArray 8 Bool :=
+  (WordArray.mk #[0, 2] (by decide), WordArray.mk #[true] (by decide))
+
+/-- Offset tables must equal actual successive element boundaries, not merely be monotone. -/
+example : ¬ IndexedArray.Valid (w := 8) (fun _ : Bool ↦ 1) malformedOffsets := by
+  intro valid
+  have boundary := valid.2.2.1 0 (by
+    change 0 < 1
+    decide)
+  change (2 : BitVec 8).toNat = (0 : BitVec 8).toNat + 1 at boundary
+  have two : (2 : BitVec 8).toNat = 2 := by decide
+  have zero : (0 : BitVec 8).toNat = 0 := by decide
+  omega
 
 #layout_audit WordRAM 8 (BitVec 8 × Option Bool)
 

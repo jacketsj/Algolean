@@ -20,8 +20,29 @@ type `Nat → WordRAM.Program`.
 
 namespace Algolean.Algorithms.WordRAM
 
+/-- Width-independent source syntax for the fixed word/address bridge. -/
+inductive TemplateExtraInstruction where
+  | valueToAddress (source : RAM.Operand ℕ ℕ) (destinationAddressRegister : ℕ)
+  | addressToValue (source destination : RAM.AddressOperand ℕ)
+  | mulAddress (left right : RAM.AddressOperand ℕ) (destinationAddressRegister : ℕ)
+
+namespace TemplateExtraInstruction
+
+def descriptionSize : TemplateExtraInstruction → Nat
+  | .valueToAddress source destination =>
+      2 + source.descriptionSize RAM.natDescriptionSize RAM.natDescriptionSize +
+        RAM.natDescriptionSize destination
+  | .addressToValue source destination =>
+      2 + source.descriptionSize RAM.natDescriptionSize +
+        destination.descriptionSize RAM.natDescriptionSize
+  | .mulAddress left right destination =>
+      2 + left.descriptionSize RAM.natDescriptionSize +
+        right.descriptionSize RAM.natDescriptionSize + RAM.natDescriptionSize destination
+
+end TemplateExtraInstruction
+
 /-- Width-independent finite source syntax. -/
-abbrev ProgramTemplate := RAM.Program ℕ ℕ Empty
+abbrev ProgramTemplate := RAM.Program ℕ ℕ TemplateExtraInstruction
 
 namespace ProgramTemplate
 
@@ -34,8 +55,8 @@ def operand (w : ℕ) : RAM.Operand ℕ ℕ → RAM.Operand (BitVec w) (BitVec w
   | .load address => .load (addressOperand w address)
 
 /-- Fixed structural instantiation of one template instruction. -/
-def instruction (w : ℕ) : RAM.Instruction ℕ ℕ Empty →
-    RAM.Instruction (BitVec w) (BitVec w) Empty
+def instruction (w : ℕ) : RAM.Instruction ℕ ℕ TemplateExtraInstruction →
+    RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w)
   | .set source destination next => .set (operand w source) (addressOperand w destination) next
   | .add left right destination next =>
       .add (operand w left) (operand w right) (addressOperand w destination) next
@@ -56,7 +77,12 @@ def instruction (w : ℕ) : RAM.Instruction ℕ ℕ Empty →
       .compare (operand w left) (operand w right) less equal greater
   | .compareAddress left right less equal greater =>
       .compareAddress (addressOperand w left) (addressOperand w right) less equal greater
-  | .extra impossible _ => nomatch impossible
+  | .extra (.valueToAddress source destination) next =>
+      .extra (.valueToAddress (operand w source) destination) next
+  | .extra (.addressToValue source destination) next =>
+      .extra (.addressToValue (addressOperand w source) (addressOperand w destination)) next
+  | .extra (.mulAddress left right destination) next =>
+      .extra (.mulAddress (addressOperand w left) (addressOperand w right) destination) next
   | .halt result => .halt (operand w result)
 
 /-- Instantiate every instruction without changing code shape or control-flow targets. -/
@@ -70,7 +96,7 @@ def instantiate (template : ProgramTemplate) (w : ℕ) : Program w :=
 /-- Width-independent serialized source size; literals and addresses use natural binary syntax. -/
 def descriptionSize (template : ProgramTemplate) : ℕ :=
   RAM.Program.descriptionSize RAM.natDescriptionSize RAM.natDescriptionSize
-    (fun impossible : Empty => nomatch impossible) template
+    TemplateExtraInstruction.descriptionSize template
 
 end ProgramTemplate
 

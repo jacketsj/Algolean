@@ -41,6 +41,9 @@ structure Profile (w : ℕ) where
   layoutLayerForbidsRepresentedWrap : Bool := true
   haltInstructionCounted : Bool := true
   literalsUseFullWordBitsInDescription : Bool := true
+  wordLoadedFromMemoryCanAddress : Bool := true
+  wordAddressTransferUnitCost : Bool := true
+  addressWordMultiplicationUnitCost : Bool := true
 
 /-- The only preferred deterministic ordinary Word-RAM profile. -/
 def standardProfile (w : ℕ) : Profile w := {}
@@ -55,6 +58,8 @@ def Profile.summary (profile : Profile w) : String :=
     "Arithmetic: unsigned modulo 2^w",
     "Comparison: unsigned three-way comparison",
     "Unit-cost operations: load/store, +, -, *, /, negation, compare",
+    "Dynamic addressing: a loaded word transfers to an address register in one step",
+    "Address arithmetic: +, -, and word multiplication are unit cost",
     "Unavailable primitives: shifts, bit scans, signed comparison",
     "Invalid program counter: stuck",
     "Raw address arithmetic: wraps; structured layouts prove no wrap",
