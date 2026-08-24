@@ -391,8 +391,8 @@ noncomputable def MonteCarloSolvesWithin (problem : BitRandomizedMachineProblem)
     sourceProbability (problem.SuccessEvent program input
       (bound (problem.inputSize input))) ≥ 1 - (failure input : ENNReal)
 
-/-- Typed certificate for one fixed program in the sealed hidden-source profile. -/
-structure MonteCarloAlgorithmCertificate (problem : BitRandomizedMachineProblem)
+/-- Every-source-time bounded-error certificate in the sealed hidden fair-bit profile. -/
+structure BoundedTimeMonteCarloAlgorithmCertificate (problem : BitRandomizedMachineProblem)
     (bound : ℕ → StructuredRealRAM.RandomBit.Cost)
     (failure : problem.Input → Probability) where
   /-- Concrete finite random-bit program. -/
@@ -405,11 +405,17 @@ structure MonteCarloAlgorithmCertificate (problem : BitRandomizedMachineProblem)
   /-- Every-input resource and probability guarantee. -/
   solves : problem.MonteCarloSolvesWithin program bound failure
 
-/-- Preferred unqualified uniform Monte Carlo existence claim. -/
-noncomputable def HasMonteCarloAlgorithm (problem : BitRandomizedMachineProblem)
+/-- Explicit every-source-time Monte Carlo existence claim. -/
+noncomputable def HasBoundedTimeMonteCarloAlgorithm (problem : BitRandomizedMachineProblem)
     (bound : ℕ → StructuredRealRAM.RandomBit.Cost)
     (failure : problem.Input → Probability) : Prop :=
-  Nonempty (MonteCarloAlgorithmCertificate problem bound failure)
+  Nonempty (BoundedTimeMonteCarloAlgorithmCertificate problem bound failure)
+
+/-- Compatibility certificate name; its semantics are every-source bounded-time Monte Carlo. -/
+abbrev MonteCarloAlgorithmCertificate := BoundedTimeMonteCarloAlgorithmCertificate
+
+/-- Compatibility proposition; prefer `HasBoundedTimeMonteCarloAlgorithm` in new theorems. -/
+abbrev HasMonteCarloAlgorithm := HasBoundedTimeMonteCarloAlgorithm
 
 /--
 Every-source-correct Las Vegas semantics with expected fetched-instruction cost.  This is stronger
@@ -553,8 +559,9 @@ noncomputable def MonteCarloSolvesWithin (problem : UniformRealRandomizedMachine
     sourceProbability (problem.SuccessEvent program input
       (bound (problem.inputSize input))) ≥ 1 - (failure input : ENNReal)
 
-/-- Typed fixed-program certificate for exact continuous uniform randomness. -/
-structure MonteCarloAlgorithmCertificate (problem : UniformRealRandomizedMachineProblem)
+/-- Every-source-time Monte Carlo certificate for exact continuous uniform randomness. -/
+structure BoundedTimeMonteCarloAlgorithmCertificate
+    (problem : UniformRealRandomizedMachineProblem)
     (bound : ℕ → StructuredRealRAM.UniformReal.Cost)
     (failure : problem.Input → Probability) where
   /-- Concrete finite exact-uniform-real program. -/
@@ -567,11 +574,18 @@ structure MonteCarloAlgorithmCertificate (problem : UniformRealRandomizedMachine
   /-- Every-input resource and probability guarantee. -/
   solves : problem.MonteCarloSolvesWithin program bound failure
 
-/-- Explicitly named strong Monte Carlo claim using exact uniform real samples. -/
-noncomputable def HasMonteCarloAlgorithm (problem : UniformRealRandomizedMachineProblem)
+/-- Explicit every-source-time Monte Carlo claim using exact uniform real samples. -/
+noncomputable def HasBoundedTimeMonteCarloAlgorithm
+    (problem : UniformRealRandomizedMachineProblem)
     (bound : ℕ → StructuredRealRAM.UniformReal.Cost)
     (failure : problem.Input → Probability) : Prop :=
-  Nonempty (MonteCarloAlgorithmCertificate problem bound failure)
+  Nonempty (BoundedTimeMonteCarloAlgorithmCertificate problem bound failure)
+
+/-- Compatibility name for the every-source bounded-time continuous-randomness certificate. -/
+abbrev MonteCarloAlgorithmCertificate := BoundedTimeMonteCarloAlgorithmCertificate
+
+/-- Compatibility proposition; prefer `HasBoundedTimeMonteCarloAlgorithm`. -/
+abbrev HasMonteCarloAlgorithm := HasBoundedTimeMonteCarloAlgorithm
 
 end UniformRealRandomizedMachineProblem
 

@@ -150,8 +150,31 @@ def RandomRelativeSuccessEvent (signature : DependencySignature w)
     problem.OutputRep output final ∧ problem.post input output ∧
     cost.steps ≤ stepBound input ∧ draws ≤ drawBound input}
 
-/-- A randomized theorem proved uniformly against every contract-correct deterministic responder. -/
-structure RandomRelativeAlgorithmCertificate (signature : DependencySignature w)
+/-- Relative termination inside explicit step/draw bounds, without a correctness requirement. -/
+def RandomRelativeTerminationWithin (signature : DependencySignature w)
+    (responder : AdmissibleResponder signature) (problem : StructuredProblem w)
+    (program : RandomOpenProgram signature) (stepBound drawBound : problem.Input → Nat)
+    (source : RandomBit.Source) (input : problem.Input) (validInput : problem.pre input) : Prop :=
+  ∃ final result draws cost calls output,
+    RandomOpenHaltingTrace signature responder program source
+      (RandomBit.Configuration.initial (problem.initialMemory input validInput))
+      final result draws cost calls ∧
+    problem.OutputRep output final ∧
+    cost.steps ≤ stepBound input ∧ draws ≤ drawBound input
+
+/-- Relative correctness event without folding timeout into the correctness failure event. -/
+def RandomRelativeCorrectEvent (signature : DependencySignature w)
+    (responder : AdmissibleResponder signature) (problem : StructuredProblem w)
+    (program : RandomOpenProgram signature)
+    (input : problem.Input) (validInput : problem.pre input) : Set RandomBit.Source :=
+  {source | ∃ final result draws cost calls output,
+    RandomOpenHaltingTrace signature responder program source
+      (RandomBit.Configuration.initial (problem.initialMemory input validInput))
+      final result draws cost calls ∧
+    problem.OutputRep output final ∧ problem.post input output}
+
+/-- High-probability bounded success uniformly against every valid deterministic responder. -/
+structure HighProbabilityBoundedSuccessRelativeCertificate (signature : DependencySignature w)
     (problem : StructuredProblem w) (stepBound drawBound : problem.Input → Nat)
     (failure : problem.Input → Probability) where
   program : RandomOpenProgram signature
@@ -165,6 +188,29 @@ structure RandomRelativeAlgorithmCertificate (signature : DependencySignature w)
         stepBound drawBound input validInput) ≥
       1 - (failure input : ENNReal)
 
+/-- Relative every-source-time Monte Carlo, preserving the selected guarantee through linking. -/
+structure BoundedTimeMonteCarloRelativeCertificate (signature : DependencySignature w)
+    (problem : StructuredProblem w) (stepBound drawBound : problem.Input → Nat)
+    (failure : problem.Input → Probability) where
+  program : RandomOpenProgram signature
+  valid : program.Valid
+  terminatesWithin : ∀ responder source input, ∀ validInput : problem.pre input,
+    RandomRelativeTerminationWithin signature responder problem program stepBound drawBound
+      source input validInput
+  correctMeasurable : ∀ responder input validInput,
+    MeasurableSet
+      (RandomRelativeCorrectEvent signature responder problem program input validInput)
+  correctProbability : ∀ responder input, ∀ validInput : problem.pre input,
+    RandomBit.sourceLaw
+      (RandomRelativeCorrectEvent signature responder problem program input validInput) ≥
+        1 - (failure input : ENNReal)
+
+/-- Compatibility name for the original relative bounded-success contract. -/
+abbrev RandomRelativeAlgorithmCertificate (signature : DependencySignature w)
+    (problem : StructuredProblem w) (stepBound drawBound : problem.Input → Nat)
+    (failure : problem.Input → Probability) :=
+  HighProbabilityBoundedSuccessRelativeCertificate signature problem stepBound drawBound failure
+
 /--
 Proof-carrying concrete randomized link.  `program` is ordinary sealed randomized syntax, while
 `refines` is pointwise in the same infinite source.  The body-presence theorem makes code
@@ -174,7 +220,7 @@ structure RandomizedConcreteLink
     {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
     {relativeStepBound relativeDrawBound : problem.Input → Nat}
     {failure : problem.Input → Probability}
-    (client : RandomRelativeAlgorithmCertificate signature problem
+    (client : HighProbabilityBoundedSuccessRelativeCertificate signature problem
       relativeStepBound relativeDrawBound failure)
     (implementations : ImplementationEnvironment signature)
     (linkedStepBound linkedDrawBound : problem.Input → Nat) where
@@ -205,11 +251,12 @@ def certificate
     {relativeStepBound relativeDrawBound linkedStepBound linkedDrawBound :
       problem.Input → Nat}
     {failure : problem.Input → Probability}
-    {client : RandomRelativeAlgorithmCertificate signature problem
+    {client : HighProbabilityBoundedSuccessRelativeCertificate signature problem
       relativeStepBound relativeDrawBound failure}
     {implementations : ImplementationEnvironment signature}
     (link : RandomizedConcreteLink client implementations linkedStepBound linkedDrawBound) :
-    problem.RandomizedAlgorithmCertificate linkedStepBound linkedDrawBound failure where
+    problem.HighProbabilityBoundedSuccessCertificate
+      linkedStepBound linkedDrawBound failure where
   program := link.program
   valid := link.valid
   measurableSuccess := link.measurableSuccess
@@ -225,11 +272,12 @@ theorem hasAlgorithm
     {relativeStepBound relativeDrawBound linkedStepBound linkedDrawBound :
       problem.Input → Nat}
     {failure : problem.Input → Probability}
-    {client : RandomRelativeAlgorithmCertificate signature problem
+    {client : HighProbabilityBoundedSuccessRelativeCertificate signature problem
       relativeStepBound relativeDrawBound failure}
     {implementations : ImplementationEnvironment signature}
     (link : RandomizedConcreteLink client implementations linkedStepBound linkedDrawBound) :
-    problem.HasRandomizedWordRAMAlgorithm linkedStepBound linkedDrawBound failure :=
+    problem.HasHighProbabilityBoundedSuccessAlgorithm
+      linkedStepBound linkedDrawBound failure :=
   ⟨link.certificate⟩
 
 end RandomizedConcreteLink

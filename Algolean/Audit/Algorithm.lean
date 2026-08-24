@@ -33,9 +33,145 @@ inductive ClaimKind where
   | uniformlyGeneratedFamily
   | compiledAlgorithm
   | monteCarloAlgorithm
+  | highProbabilityBoundedSuccessAlgorithm
+  | boundedTimeMonteCarloAlgorithm
+  | oneSidedMonteCarloAlgorithm
+  | coOneSidedMonteCarloAlgorithm
+  | expectedTimeLasVegasAlgorithm
+  | highProbabilityTimeLasVegasAlgorithm
+  | almostSureLasVegasAlgorithm
+  | expectedApproximationAlgorithm
+  | samplerAlgorithm
   | totalTapeLasVegasAlgorithm
   | everySourceLasVegasAlgorithm
 deriving DecidableEq, Repr
+
+/-- Stable semantic taxonomy printed by randomized publication artifacts. -/
+inductive RandomGuaranteeKind where
+  | highProbabilityBoundedSuccess
+  | boundedTimeMonteCarlo
+  | oneSidedBoundedTimeMonteCarlo
+  | coOneSidedBoundedTimeMonteCarlo
+  | everySourceLasVegas
+  | expectedTimeLasVegas
+  | highProbabilityTimeLasVegas
+  | almostSureLasVegas
+  | expectedApproximation
+  | exactSampler
+deriving DecidableEq, Repr
+
+/-- Complete model-independent disclosure of one randomized guarantee category. -/
+structure RandomGuaranteeAudit where
+  kind : RandomGuaranteeKind
+  runtimeGuarantee : String
+  correctnessGuarantee : String
+  timeoutIsFailure : Bool
+  divergenceIsFailure : Bool
+  drawBound : String
+  outputClaim : String
+
+namespace RandomGuaranteeAudit
+
+def highProbabilityBoundedSuccess : RandomGuaranteeAudit where
+  kind := .highProbabilityBoundedSuccess
+  runtimeGuarantee := "bounded only on the measured success event"
+  correctnessGuarantee := "two-sided bounded failure"
+  timeoutIsFailure := true
+  divergenceIsFailure := true
+  drawBound := "worst-case only on the success event"
+  outputClaim := "relational"
+
+def boundedTimeMonteCarlo : RandomGuaranteeAudit where
+  kind := .boundedTimeMonteCarlo
+  runtimeGuarantee := "every source terminates within the stated bound"
+  correctnessGuarantee := "two-sided bounded error"
+  timeoutIsFailure := false
+  divergenceIsFailure := false
+  drawBound := "worst-case every source"
+  outputClaim := "relational"
+
+def oneSidedBoundedTimeMonteCarlo : RandomGuaranteeAudit where
+  kind := .oneSidedBoundedTimeMonteCarlo
+  runtimeGuarantee := "every source terminates within the stated bound"
+  correctnessGuarantee := "one-sided decision error"
+  timeoutIsFailure := false
+  divergenceIsFailure := false
+  drawBound := "worst-case every source"
+  outputClaim := "decision acceptance event"
+
+def coOneSidedBoundedTimeMonteCarlo : RandomGuaranteeAudit where
+  kind := .coOneSidedBoundedTimeMonteCarlo
+  runtimeGuarantee := "every source terminates within the stated bound"
+  correctnessGuarantee := "coRP-oriented one-sided decision error"
+  timeoutIsFailure := false
+  divergenceIsFailure := false
+  drawBound := "worst-case every source"
+  outputClaim := "decision rejection event"
+
+def everySourceLasVegas : RandomGuaranteeAudit where
+  kind := .everySourceLasVegas
+  runtimeGuarantee := "every source terminates within the stated bound"
+  correctnessGuarantee := "zero error on every source"
+  timeoutIsFailure := false
+  divergenceIsFailure := false
+  drawBound := "worst-case every source"
+  outputClaim := "relational"
+
+def expectedTimeLasVegas : RandomGuaranteeAudit where
+  kind := .expectedTimeLasVegas
+  runtimeGuarantee := "almost-sure termination with finite expected runtime"
+  correctnessGuarantee := "zero error on every halting run"
+  timeoutIsFailure := false
+  divergenceIsFailure := false
+  drawBound := "none unless stated separately"
+  outputClaim := "relational"
+
+def highProbabilityTimeLasVegas : RandomGuaranteeAudit where
+  kind := .highProbabilityTimeLasVegas
+  runtimeGuarantee := "the stated time/draw bound holds with high probability"
+  correctnessGuarantee := "zero error on every halting run"
+  timeoutIsFailure := true
+  divergenceIsFailure := true
+  drawBound := "high probability"
+  outputClaim := "relational"
+
+def almostSureLasVegas : RandomGuaranteeAudit where
+  kind := .almostSureLasVegas
+  runtimeGuarantee := "almost-sure termination; no expectation bound implied"
+  correctnessGuarantee := "zero error on every halting run"
+  timeoutIsFailure := false
+  divergenceIsFailure := false
+  drawBound := "none"
+  outputClaim := "relational"
+
+def expectedApproximation : RandomGuaranteeAudit where
+  kind := .expectedApproximation
+  runtimeGuarantee := "every source terminates (as witnessed by the output realization)"
+  correctnessGuarantee := "expected measurable loss bound"
+  timeoutIsFailure := false
+  divergenceIsFailure := false
+  drawBound := "none unless stated separately"
+  outputClaim := "expected quality"
+
+def exactSampler : RandomGuaranteeAudit where
+  kind := .exactSampler
+  runtimeGuarantee := "every source terminates (as witnessed by the sampled output)"
+  correctnessGuarantee := "exact pushforward distribution"
+  timeoutIsFailure := false
+  divergenceIsFailure := false
+  drawBound := "none unless stated separately"
+  outputClaim := "distributional"
+
+def summary (audit : RandomGuaranteeAudit) : String :=
+  "Guarantee category: " ++ reprStr audit.kind ++ "\n" ++
+  "Runtime guarantee: " ++ audit.runtimeGuarantee ++ "\n" ++
+  "Correctness guarantee: " ++ audit.correctnessGuarantee ++ "\n" ++
+  "Failure event includes timeout: " ++ toString audit.timeoutIsFailure ++ "\n" ++
+  "Failure event includes divergence: " ++ toString audit.divergenceIsFailure ++ "\n" ++
+  "Draw bound: " ++ audit.drawBound ++ "\n" ++
+  "Output claim: " ++ audit.outputClaim
+
+end RandomGuaranteeAudit
 
 /-- Whether reported execution costs count target steps or named weighted transitions. -/
 inductive CostSource where
@@ -184,13 +320,14 @@ structure UniformlyGeneratedFamilyPublication
   /-- Explicit caveats. -/
   warnings : List String := []
 
-/-- Typed publication artifact for the hidden lengthless iid-bit Monte Carlo profile. -/
-structure MonteCarloAlgorithmPublication
+/-- Typed publication artifact for hidden-bit every-source bounded-time Monte Carlo. -/
+structure BoundedTimeMonteCarloAlgorithmPublication
     (problem : BitRandomizedMachineProblem)
     (bound : ℕ → StructuredRealRAM.RandomBit.Cost)
     (failure : problem.Input → Probability) where
-  /-- Actual hidden-source Monte Carlo certificate. -/
-  certificate : BitRandomizedMachineProblem.MonteCarloAlgorithmCertificate problem bound failure
+  /-- Actual hidden-source every-source bounded-time certificate. -/
+  certificate : BitRandomizedMachineProblem.BoundedTimeMonteCarloAlgorithmCertificate
+    problem bound failure
   /-- Declaration name of this publication. -/
   certificateName : Lean.Name
   /-- Mathematical problem declaration. -/
@@ -204,14 +341,15 @@ structure MonteCarloAlgorithmPublication
   /-- Explicit caveats. -/
   warnings : List String := []
 
-/-- Typed publication artifact for the stronger exact-uniform-real Monte Carlo profile. -/
-structure UniformRealMonteCarloAlgorithmPublication
+/-- Typed publication artifact for exact-uniform-real every-source bounded-time Monte Carlo. -/
+structure UniformRealBoundedTimeMonteCarloAlgorithmPublication
     (problem : UniformRealRandomizedMachineProblem)
     (bound : ℕ → StructuredRealRAM.UniformReal.Cost)
     (failure : problem.Input → Probability) where
-  /-- Actual exact-uniform-real Monte Carlo certificate. -/
+  /-- Actual exact-uniform-real every-source bounded-time certificate. -/
   certificate :
-    UniformRealRandomizedMachineProblem.MonteCarloAlgorithmCertificate problem bound failure
+    UniformRealRandomizedMachineProblem.BoundedTimeMonteCarloAlgorithmCertificate
+      problem bound failure
   /-- Declaration name of this publication. -/
   certificateName : Lean.Name
   /-- Mathematical problem declaration. -/
@@ -224,6 +362,13 @@ structure UniformRealMonteCarloAlgorithmPublication
   correctnessTheorem : Lean.Name
   /-- Explicit caveats. -/
   warnings : List String := []
+
+/-- Compatibility name; prefer the guarantee-specific publication name. -/
+abbrev MonteCarloAlgorithmPublication := BoundedTimeMonteCarloAlgorithmPublication
+
+/-- Compatibility name; prefer the guarantee-specific publication name. -/
+abbrev UniformRealMonteCarloAlgorithmPublication :=
+  UniformRealBoundedTimeMonteCarloAlgorithmPublication
 
 /-- Typed publication artifact for every-source-correct Las Vegas step complexity. -/
 structure EverySourceLasVegasAlgorithmPublication
@@ -292,6 +437,15 @@ def ClaimKind.label : ClaimKind → String
   | .uniformlyGeneratedFamily => "uniformly generated family"
   | .compiledAlgorithm => "compiled algorithm"
   | .monteCarloAlgorithm => "Monte Carlo algorithm"
+  | .highProbabilityBoundedSuccessAlgorithm => "high-probability bounded-success algorithm"
+  | .boundedTimeMonteCarloAlgorithm => "bounded-time Monte Carlo algorithm"
+  | .oneSidedMonteCarloAlgorithm => "one-sided bounded-time Monte Carlo algorithm"
+  | .coOneSidedMonteCarloAlgorithm => "co-one-sided bounded-time Monte Carlo algorithm"
+  | .expectedTimeLasVegasAlgorithm => "expected-time Las Vegas algorithm"
+  | .highProbabilityTimeLasVegasAlgorithm => "high-probability-time Las Vegas algorithm"
+  | .almostSureLasVegasAlgorithm => "almost-sure Las Vegas algorithm"
+  | .expectedApproximationAlgorithm => "expected-approximation algorithm"
+  | .samplerAlgorithm => "sampler algorithm"
   | .totalTapeLasVegasAlgorithm => "total-tape Las Vegas algorithm"
   | .everySourceLasVegasAlgorithm => "every-source Las Vegas algorithm"
 
@@ -457,13 +611,13 @@ def UniformlyGeneratedFamilyPublication.summary
   "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
 
 /-- Complete report derived from an actual hidden-source Monte Carlo certificate. -/
-def MonteCarloAlgorithmPublication.summary
+def BoundedTimeMonteCarloAlgorithmPublication.summary
     {problem : BitRandomizedMachineProblem}
     {bound : ℕ → StructuredRealRAM.RandomBit.Cost}
     {failure : problem.Input → Probability}
-    (publication : MonteCarloAlgorithmPublication problem bound failure) : String :=
+    (publication : BoundedTimeMonteCarloAlgorithmPublication problem bound failure) : String :=
   let program := publication.certificate.program
-  "Claim kind: Monte Carlo algorithm\n" ++
+  RandomGuaranteeAudit.boundedTimeMonteCarlo.summary ++ "\n" ++
   "Machine: " ++ StructuredRealRAM.RandomBit.profile.name ++ "\n" ++
   "Certificate: " ++ toString publication.certificateName ++ "\n" ++
   "Problem: " ++ toString publication.problemName ++ "\n" ++
@@ -484,13 +638,15 @@ def MonteCarloAlgorithmPublication.summary
   "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
 
 /-- Audit report that prominently distinguishes exact continuous samples from random bits. -/
-def UniformRealMonteCarloAlgorithmPublication.summary
+def UniformRealBoundedTimeMonteCarloAlgorithmPublication.summary
     {problem : UniformRealRandomizedMachineProblem}
     {bound : ℕ → StructuredRealRAM.UniformReal.Cost}
     {failure : problem.Input → Probability}
-    (publication : UniformRealMonteCarloAlgorithmPublication problem bound failure) : String :=
+    (publication : UniformRealBoundedTimeMonteCarloAlgorithmPublication problem bound failure) :
+    String :=
   let program := publication.certificate.program
-  "Claim kind: exact-uniform-real Monte Carlo algorithm\n" ++
+  "Source profile: hidden iid exact uniform reals\n" ++
+  RandomGuaranteeAudit.boundedTimeMonteCarlo.summary ++ "\n" ++
   "Machine: " ++ StructuredRealRAM.UniformReal.profile.name ++ "\n" ++
   "Certificate: " ++ toString publication.certificateName ++ "\n" ++
   "Problem: " ++ toString publication.problemName ++ "\n" ++
@@ -544,8 +700,12 @@ def OracleAlgorithmPublication.summary
     toString (StructuredRealRAM.OracleMachine.Program.descriptionSize program) ++ " bits\n" ++
   "Input layout syntax: " ++ problem.inputLayout.syntaxName ++ "\n" ++
   "Output layout syntax: " ++ problem.outputLayout.syntaxName ++ "\n" ++
+  "Query layout: " ++ problem.interface.queryLayout.syntaxName ++ "\n" ++
+  "Answer layout: query-dependent closed Layout; selection is an external-contract assumption\n" ++
   "Query decoding: fixed closed-layout reader\n" ++
-  "Answer transfer: fixed closed-layout overwrite preserving other memory\n" ++
+  "Responder semantics: one coherent answer function for the complete run\n" ++
+  "Oracle computation cost: named interface assumption\n" ++
+  "Transfer cost: derived from represented query read and represented answer write\n" ++
   "Cost: fetched call, represented query read, named oracle cost, represented answer write\n" ++
   "Cost/output source: one responder-indexed halting trace\n" ++
   "Bound: " ++ toString publication.boundName ++ "\n" ++
@@ -585,14 +745,16 @@ instance {problem : MachineProblem}
 instance {problem : BitRandomizedMachineProblem}
     {bound : ℕ → StructuredRealRAM.RandomBit.Cost}
     {failure : problem.Input → Probability} :
-    AuditablePublication (MonteCarloAlgorithmPublication problem bound failure) :=
-  ⟨MonteCarloAlgorithmPublication.summary⟩
+    AuditablePublication
+      (BoundedTimeMonteCarloAlgorithmPublication problem bound failure) :=
+  ⟨BoundedTimeMonteCarloAlgorithmPublication.summary⟩
 
 instance {problem : UniformRealRandomizedMachineProblem}
     {bound : ℕ → StructuredRealRAM.UniformReal.Cost}
     {failure : problem.Input → Probability} :
-    AuditablePublication (UniformRealMonteCarloAlgorithmPublication problem bound failure) :=
-  ⟨UniformRealMonteCarloAlgorithmPublication.summary⟩
+    AuditablePublication
+      (UniformRealBoundedTimeMonteCarloAlgorithmPublication problem bound failure) :=
+  ⟨UniformRealBoundedTimeMonteCarloAlgorithmPublication.summary⟩
 
 instance {problem : BitRandomizedMachineProblem} {bound : ℕ → ENNReal} :
     AuditablePublication (EverySourceLasVegasAlgorithmPublication problem bound) :=

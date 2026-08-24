@@ -6,19 +6,19 @@ Authors: Algolean contributors
 
 module
 
-public import Algolean.Compiler.StructuredRealRAMRandomLinker
+public import Algolean.Compiler.StructuredRealRAMUniformRealLinker
 
 /-! # Same-source correctness of randomized structured-real linking -/
 
 @[expose] public section
 
-namespace Algolean.Algorithms.StructuredRealRAM.RandomLinker
+namespace Algolean.Algorithms.StructuredRealRAM.UniformRealLinker
 
 open MeasureTheory
 
 noncomputable section
 
-private theorem randomCost_add_assoc (left middle right : RandomBit.Cost) :
+private theorem randomCost_add_assoc (left middle right : UniformReal.Cost) :
     (left + middle) + right = left + (middle + right) := by
   apply RandomBit.Cost.ext
   · funext coordinate
@@ -30,7 +30,7 @@ private theorem randomCost_add_assoc (left middle right : RandomBit.Cost) :
     omega
 
 private theorem randomCost_add_mono
-    {left left' right right' : RandomBit.Cost}
+    {left left' right right' : UniformReal.Cost}
     (leftBound : left ≤ left') (rightBound : right ≤ right') :
     left + right ≤ left' + right' := by
   constructor
@@ -47,7 +47,7 @@ private theorem ofCore_add (left right : Cost) :
       RandomBit.Cost.ofCore left + RandomBit.Cost.ofCore right := by
   apply RandomBit.Cost.ext <;> rfl
 
-private theorem randomCost_add_coreZero (cost : RandomBit.Cost) :
+private theorem randomCost_add_coreZero (cost : UniformReal.Cost) :
     cost + RandomBit.Cost.ofCore 0 = cost := by
   apply RandomBit.Cost.ext
   · funext coordinate
@@ -56,13 +56,13 @@ private theorem randomCost_add_coreZero (cost : RandomBit.Cost) :
   · change cost.randomDraws + 0 = cost.randomDraws
     omega
 
-inductive RunningTrace (program : RandomBit.Program) (source : RandomBit.Source) :
-    RandomBit.Configuration → RandomBit.Configuration → RandomBit.Cost → Nat → Prop where
+inductive RunningTrace (program : UniformReal.Program) (source : UniformReal.Source) :
+    UniformReal.Configuration → UniformReal.Configuration → UniformReal.Cost → Nat → Prop where
   | one {initial final cost}
-      (step : RandomBit.step program source initial = ⟨.running final, cost⟩) :
+      (step : UniformReal.step program source initial = ⟨.running final, cost⟩) :
       RunningTrace program source initial final cost 1
   | next {initial middle final headCost tailCost tailSteps}
-      (step : RandomBit.step program source initial = ⟨.running middle, headCost⟩)
+      (step : UniformReal.step program source initial = ⟨.running middle, headCost⟩)
       (tail : RunningTrace program source middle final tailCost tailSteps) :
       RunningTrace program source initial final (headCost + tailCost) (tailSteps + 1)
 
@@ -81,50 +81,50 @@ theorem RunningTrace.trans
 
 theorem RunningTrace.thenHalting
     (runningPrefix : RunningTrace program source initial middle prefixCost prefixSteps)
-    (suffix : RandomBit.HaltingTrace program source middle final result suffixCost suffixSteps draws) :
-    RandomBit.HaltingTrace program source initial final result
+    (suffix : UniformReal.HaltingTrace program source middle final result suffixCost suffixSteps draws) :
+    UniformReal.HaltingTrace program source initial final result
       (prefixCost + suffixCost) (suffixSteps + prefixSteps) draws := by
   induction runningPrefix with
   | one step =>
       simpa [add_assoc, Nat.add_comm, Nat.add_left_comm] using
-        RandomBit.HaltingTrace.next step suffix
+        UniformReal.HaltingTrace.next step suffix
   | next step tail induction =>
-      have combined := RandomBit.HaltingTrace.next step (induction suffix)
+      have combined := UniformReal.HaltingTrace.next step (induction suffix)
       rw [← randomCost_add_assoc] at combined
       convert combined using 1 <;> omega
 
 /-- Lift a fetched deterministic running step at the same program counter. -/
-theorem core_running (deterministicProgram : Program) (randomProgram : RandomBit.Program)
-    (source : RandomBit.Source) (cursor : Nat) (initial next : Configuration)
+theorem core_running (deterministicProgram : Program) (randomProgram : UniformReal.Program)
+    (source : UniformReal.Source) (cursor : Nat) (initial next : Configuration)
     (instruction : Instruction)
     (deterministicFetch : deterministicProgram[initial.pc]? = some instruction)
     (randomFetch : randomProgram[initial.pc]? = some (.core instruction))
     (deterministicStep : step deterministicProgram initial = ⟨.running next, cost⟩) :
-    RandomBit.step randomProgram source ⟨initial.pc, initial.memory, cursor⟩ =
+    UniformReal.step randomProgram source ⟨initial.pc, initial.memory, cursor⟩ =
       ⟨.running ⟨next.pc, next.memory, cursor⟩, RandomBit.Cost.ofCore cost⟩ := by
   simp only [StructuredRealRAM.step, deterministicFetch] at deterministicStep
-  simp only [RandomBit.step, randomFetch, RandomBit.execute]
+  simp only [UniformReal.step, randomFetch, UniformReal.execute]
   rw [deterministicStep]
   rfl
 
 /-- Lift a fetched deterministic halt at the same program counter. -/
-theorem core_halted (deterministicProgram : Program) (randomProgram : RandomBit.Program)
-    (source : RandomBit.Source) (cursor : Nat) (initial : Configuration)
+theorem core_halted (deterministicProgram : Program) (randomProgram : UniformReal.Program)
+    (source : UniformReal.Source) (cursor : Nat) (initial : Configuration)
     (final : Memory) (result : Real) (instruction : Instruction)
     (deterministicFetch : deterministicProgram[initial.pc]? = some instruction)
     (randomFetch : randomProgram[initial.pc]? = some (.core instruction))
     (deterministicStep : step deterministicProgram initial = ⟨.halted final result, cost⟩) :
-    RandomBit.step randomProgram source ⟨initial.pc, initial.memory, cursor⟩ =
+    UniformReal.step randomProgram source ⟨initial.pc, initial.memory, cursor⟩ =
       ⟨.halted final result cursor, RandomBit.Cost.ofCore cost⟩ := by
   simp only [StructuredRealRAM.step, deterministicFetch] at deterministicStep
-  simp only [RandomBit.step, randomFetch, RandomBit.execute]
+  simp only [UniformReal.step, randomFetch, UniformReal.execute]
   rw [deterministicStep]
   rfl
 
 /-- Every relocated callee transition executes as a cursor-preserving core transition. -/
-theorem relocate_trace (client : RandomOpenProgram signature)
+theorem relocate_trace (client : UniformOpenProgram signature)
     (environment : ImplementationEnvironment signature) (configuration : Linker.Configuration)
-    (source : RandomBit.Source) (cursor : Nat) (op : signature.Op)
+    (source : UniformReal.Source) (cursor : Nat) (op : signature.Op)
     (trace : HaltingTrace (environment.implementation op).module.code
       localInitial final result cost steps) :
     ∃ linkedCost,
@@ -210,19 +210,19 @@ theorem relocate_trace (client : RandomOpenProgram signature)
         · intro coordinate
           exact Nat.add_le_add_left (tailBound coordinate) (headCost coordinate)
 
-private theorem dispatcher_after_client (client : RandomOpenProgram signature)
+private theorem dispatcher_after_client (client : UniformOpenProgram signature)
     (environment : ImplementationEnvironment signature) (pc : Nat) :
     client.length ≤ Linker.dispatcherBase (placement client) environment + pc := by
   simp only [Linker.dispatcherBase, placement_length]
   omega
 
-theorem dispatcher_equal (client : RandomOpenProgram signature)
+theorem dispatcher_equal (client : UniformOpenProgram signature)
     (environment : ImplementationEnvironment signature) (configuration : Linker.Configuration)
-    (source : RandomBit.Source) (cursor returnPc : Nat) (op : signature.Op)
+    (source : UniformReal.Source) (cursor returnPc : Nat) (op : signature.Op)
     (input output : Region) (next : Nat) (memory : Memory)
     (fetch : client[returnPc]? = some (.call op input output next))
     (returnId : memory.natReg configuration.returnRegister = returnPc) :
-    RandomBit.step (link client environment configuration) source
+    UniformReal.step (link client environment configuration) source
       ⟨Linker.dispatcherBase (placement client) environment + 2 * returnPc, memory, cursor⟩ =
       ⟨.running ⟨Linker.dispatcherBase (placement client) environment + 2 * returnPc + 1,
         memory, cursor⟩,
@@ -247,12 +247,12 @@ theorem dispatcher_equal (client : RandomOpenProgram signature)
     (deterministicStep := Linker.dispatcher_step_equal (placement client) environment
       configuration returnPc op input output next memory placementFetch returnId)
 
-theorem dispatcher_cleanup (client : RandomOpenProgram signature)
+theorem dispatcher_cleanup (client : UniformOpenProgram signature)
     (environment : ImplementationEnvironment signature) (configuration : Linker.Configuration)
-    (source : RandomBit.Source) (cursor returnPc : Nat) (op : signature.Op)
+    (source : UniformReal.Source) (cursor returnPc : Nat) (op : signature.Op)
     (input output : Region) (next : Nat) (memory : Memory)
     (fetch : client[returnPc]? = some (.call op input output next)) :
-    RandomBit.step (link client environment configuration) source
+    UniformReal.step (link client environment configuration) source
       ⟨Linker.dispatcherBase (placement client) environment + 2 * returnPc + 1,
         memory, cursor⟩ =
       ⟨.running ⟨next, memory.writeReg configuration.returnRegister 0, cursor⟩,
@@ -280,12 +280,12 @@ theorem dispatcher_cleanup (client : RandomOpenProgram signature)
     (deterministicStep := Linker.dispatcher_cleanup_step (placement client) environment
       configuration returnPc op input output next memory placementFetch)
 
-theorem dispatcher_before (client : RandomOpenProgram signature)
+theorem dispatcher_before (client : UniformOpenProgram signature)
     (environment : ImplementationEnvironment signature) (configuration : Linker.Configuration)
-    (source : RandomBit.Source) (cursor returnPc index : Nat) (memory : Memory)
+    (source : UniformReal.Source) (cursor returnPc index : Nat) (memory : Memory)
     (returnInRange : returnPc < client.length) (before : index < returnPc)
     (returnId : memory.natReg configuration.returnRegister = returnPc) :
-    RandomBit.step (link client environment configuration) source
+    UniformReal.step (link client environment configuration) source
       ⟨Linker.dispatcherBase (placement client) environment + 2 * index, memory, cursor⟩ =
       ⟨.running
         ⟨Linker.dispatcherBase (placement client) environment + 2 * (index + 1),
@@ -313,9 +313,9 @@ theorem dispatcher_before (client : RandomOpenProgram signature)
     (deterministicStep := Linker.dispatcher_step_before (placement client) environment
       configuration returnPc index memory (by simpa using returnInRange) before returnId)
 
-theorem dispatcher_returns_from (client : RandomOpenProgram signature)
+theorem dispatcher_returns_from (client : UniformOpenProgram signature)
     (environment : ImplementationEnvironment signature) (configuration : Linker.Configuration)
-    (source : RandomBit.Source) (cursor returnPc index : Nat) (op : signature.Op)
+    (source : UniformReal.Source) (cursor returnPc index : Nat) (op : signature.Op)
     (input output : Region) (next : Nat) (memory : Memory)
     (fetch : client[returnPc]? = some (.call op input output next))
     (indexBefore : index ≤ returnPc)
@@ -363,9 +363,9 @@ theorem dispatcher_returns_from (client : RandomOpenProgram signature)
     · omega
 termination_by returnPc - index
 
-theorem dispatcher_returns (client : RandomOpenProgram signature)
+theorem dispatcher_returns (client : UniformOpenProgram signature)
     (environment : ImplementationEnvironment signature) (configuration : Linker.Configuration)
-    (source : RandomBit.Source) (cursor returnPc : Nat) (op : signature.Op)
+    (source : UniformReal.Source) (cursor returnPc : Nat) (op : signature.Op)
     (input output : Region) (next : Nat) (memory : Memory)
     (fetch : client[returnPc]? = some (.call op input output next))
     (returnId : memory.natReg configuration.returnRegister = returnPc) :
@@ -376,27 +376,27 @@ theorem dispatcher_returns (client : RandomOpenProgram signature)
   simpa using dispatcher_returns_from client environment configuration source cursor returnPc 0
     op input output next memory fetch (Nat.zero_le _) returnId
 
-theorem call_setup (client : RandomOpenProgram signature)
+theorem call_setup (client : UniformOpenProgram signature)
     (environment : ImplementationEnvironment signature) (configuration : Linker.Configuration)
-    (source : RandomBit.Source) (cursor pc : Nat) (op : signature.Op)
+    (source : UniformReal.Source) (cursor pc : Nat) (op : signature.Op)
     (input output : Region) (next : Nat) (memory : Memory)
     (fetch : client[pc]? = some (.call op input output next)) :
-    RandomBit.step (link client environment configuration) source ⟨pc, memory, cursor⟩ =
+    UniformReal.step (link client environment configuration) source ⟨pc, memory, cursor⟩ =
       ⟨.running ⟨Linker.operationBase (placement client) environment op +
         (environment.implementation op).module.entry,
         memory.writeReg configuration.returnRegister pc, cursor⟩,
         RandomBit.Cost.ofCore
           ((Instruction.nset (.literal pc) configuration.returnRegister 0).cost)⟩ := by
   have randomFetch := link_fetch_client client environment configuration pc _ fetch
-  simp [RandomBit.step, randomFetch, clientInstruction, Linker.clientInstruction,
-    RandomBit.execute, RandomBit.liftCoreOutcome, RandomBit.Cost.ofCore,
+  simp [UniformReal.step, randomFetch, clientInstruction, Linker.clientInstruction,
+    UniformReal.execute, UniformReal.liftCoreOutcome, RandomBit.Cost.ofCore,
     StructuredRealRAM.execute, NatOperand.eval, Instruction.cost]
 
 /-- One abstract call expands to setup, every deterministic callee step, and dispatch. -/
-theorem refine_call (client : RandomOpenProgram signature)
+theorem refine_call (client : UniformOpenProgram signature)
     (environment : ImplementationEnvironment signature) (configuration : Linker.Configuration)
     (compatible : Linker.Compatibility (placement client) environment configuration)
-    (source : RandomBit.Source) (cursor pc : Nat) (op : signature.Op)
+    (source : UniformReal.Source) (cursor pc : Nat) (op : signature.Op)
     (inputRegion outputRegion : Region) (next : Nat)
     (input : (signature.contract op).Input) (validInput : (signature.contract op).pre input)
     (memory : Memory)
@@ -493,13 +493,13 @@ theorem refine_call (client : RandomOpenProgram signature)
 
 /-- A running random-client instruction preserves the linker-owned natural register. -/
 theorem randomInstruction_preserves_register
-    (client : RandomOpenProgram signature)
+    (client : UniformOpenProgram signature)
     (environment : ImplementationEnvironment signature) (configuration : Linker.Configuration)
     (compatible : Linker.Compatibility (placement client) environment configuration)
-    (source : RandomBit.Source) (initial next : RandomBit.Configuration)
-    (instruction : RandomBit.Instruction)
+    (source : UniformReal.Source) (initial next : UniformReal.Configuration)
+    (instruction : UniformReal.Instruction)
     (fetch : client[initial.pc]? = some (.machine instruction))
-    (observed : RandomBit.execute source instruction initial = ⟨.running next, cost⟩) :
+    (observed : UniformReal.execute source instruction initial = ⟨.running next, cost⟩) :
     next.memory.natReg configuration.returnRegister =
       initial.memory.natReg configuration.returnRegister := by
   cases instruction with
@@ -508,31 +508,31 @@ theorem randomInstruction_preserves_register
           some (.core coreInstruction) := by
         simp [placement, fetch, placementInstruction]
       have safe := compatible.clientAvoidsReturnRegister _ _ placementFetch
-      simp only [RandomBit.execute, RandomBit.liftCoreOutcome] at observed
+      simp only [UniformReal.execute, UniformReal.liftCoreOutcome] at observed
       generalize execution : StructuredRealRAM.execute coreInstruction initial.memory =
         coreObservation at observed
       cases coreObservation with
       | mk outcome coreCost =>
           cases outcome <;> cases observed
           exact Linker.instructionAvoids_preserves_register _ _ safe _ _ _ execution
-  | randBit destination successor =>
-      simp only [RandomBit.execute] at observed
+  | sampleUniform destination successor =>
+      simp only [UniformReal.execute] at observed
       cases observed
       rfl
 
 /-- Flatten a complete relative random trace into one concrete same-source linked trace. -/
-theorem refine_trace (client : RandomOpenProgram signature)
+theorem refine_trace (client : UniformOpenProgram signature)
     (environment : ImplementationEnvironment signature) (configuration : Linker.Configuration)
     (compatible : Linker.Compatibility (placement client) environment configuration)
-    (source : RandomBit.Source)
-    {initial : RandomBit.Configuration} {final : Memory} {result : Real}
-    {cost : RandomBit.Cost} {steps draws : Nat}
+    (source : UniformReal.Source)
+    {initial : UniformReal.Configuration} {final : Memory} {result : Real}
+    {cost : UniformReal.Cost} {steps draws : Nat}
     {calls : List (DependencyCallRecord signature)}
-    (trace : RandomOpenHaltingTrace signature environment.responder client source
+    (trace : UniformOpenHaltingTrace signature environment.responder client source
       initial final result cost steps draws calls)
     (registerZero : initial.memory.natReg configuration.returnRegister = 0) :
     ∃ linkedCost linkedSteps,
-      RandomBit.HaltingTrace (link client environment configuration) source
+      UniformReal.HaltingTrace (link client environment configuration) source
         initial final result linkedCost linkedSteps draws ∧
       linkedCost ≤ cost +
         RandomBit.Cost.ofCore (Linker.totalConcreteCallOverhead environment calls) := by
@@ -543,7 +543,7 @@ theorem refine_trace (client : RandomOpenProgram signature)
           rename_i haltMemory haltResult haltCost haltDraws instruction
           have linkedFetch := link_fetch_client client environment configuration _ _ fetch
           refine ⟨haltCost, 1, .halt ?_, ?_⟩
-          · simp only [RandomBit.step, linkedFetch, clientInstruction]
+          · simp only [UniformReal.step, linkedFetch, clientInstruction]
             exact observed
           · rw [show Linker.totalConcreteCallOverhead environment [] = 0 by
                   rfl, randomCost_add_coreZero]
@@ -558,7 +558,7 @@ theorem refine_trace (client : RandomOpenProgram signature)
             ⟨tailLinkedCost, tailLinkedSteps, linkedTail, tailBound⟩
           have linkedFetch := link_fetch_client client environment configuration _ _ fetch
           refine ⟨headCost + tailLinkedCost, tailLinkedSteps + 1, .next ?_ linkedTail, ?_⟩
-          · simp only [RandomBit.step, linkedFetch, clientInstruction]
+          · simp only [UniformReal.step, linkedFetch, clientInstruction]
             exact observed
           · calc
               headCost + tailLinkedCost ≤
@@ -631,16 +631,16 @@ theorem refine_trace (client : RandomOpenProgram signature)
 
 /-- Exact trace-side condition for choosing a public linked resource bound. -/
 def BoundCovers
-    {signature : DependencySignature} {problem : BitRandomizedMachineProblem}
-    {relativeBound : Nat → RandomBit.Cost} {failure : problem.Input → Probability}
-    (client : BoundedTimeMonteCarloRelativeCertificate signature problem relativeBound failure)
+    {signature : DependencySignature} {problem : UniformRealRandomizedMachineProblem}
+    {relativeBound : Nat → UniformReal.Cost} {failure : problem.Input → Probability}
+    (client : UniformRelativeAlgorithmCertificate signature problem relativeBound failure)
     (environment : ImplementationEnvironment signature)
-    (linkedBound : Nat → RandomBit.Cost) : Prop :=
-  ∀ (source : RandomBit.Source) (input : problem.Input)
-      (final : Memory) (result : Real) (cost : RandomBit.Cost)
+    (linkedBound : Nat → UniformReal.Cost) : Prop :=
+  ∀ (source : UniformReal.Source) (input : problem.Input)
+      (final : Memory) (result : Real) (cost : UniformReal.Cost)
       (steps draws : Nat) (calls : List (DependencyCallRecord signature)),
     problem.pre input →
-    RandomOpenHaltingTrace signature environment.responder client.program source
+    UniformOpenHaltingTrace signature environment.responder client.program source
       (RandomBit.Configuration.initial (problem.initialMemory input))
       final result cost steps draws calls →
     cost ≤ relativeBound (problem.inputSize input) →
@@ -649,12 +649,12 @@ def BoundCovers
 
 /-- Static, cost, and measurability obligations for automatic same-source publication. -/
 structure LinkingAssumptions
-    {signature : DependencySignature} {problem : BitRandomizedMachineProblem}
-    {relativeBound : Nat → RandomBit.Cost} {failure : problem.Input → Probability}
-    (client : BoundedTimeMonteCarloRelativeCertificate signature problem relativeBound failure)
+    {signature : DependencySignature} {problem : UniformRealRandomizedMachineProblem}
+    {relativeBound : Nat → UniformReal.Cost} {failure : problem.Input → Probability}
+    (client : UniformRelativeAlgorithmCertificate signature problem relativeBound failure)
     (environment : ImplementationEnvironment signature)
     (configuration : Linker.Configuration)
-    (linkedBound : Nat → RandomBit.Cost) : Prop where
+    (linkedBound : Nat → UniformReal.Cost) : Prop where
   compatible : Linker.Compatibility (placement client.program) environment configuration
   returnRegisterInitiallyZero : ∀ input,
     (problem.initialMemory input).natReg configuration.returnRegister = 0
@@ -667,13 +667,13 @@ structure LinkingAssumptions
 
 /-- Relative termination under the implementation responder implies concrete linked termination. -/
 theorem terminates
-    {signature : DependencySignature} {problem : BitRandomizedMachineProblem}
-    {relativeBound : Nat → RandomBit.Cost} {failure : problem.Input → Probability}
-    (client : BoundedTimeMonteCarloRelativeCertificate signature problem relativeBound failure)
+    {signature : DependencySignature} {problem : UniformRealRandomizedMachineProblem}
+    {relativeBound : Nat → UniformReal.Cost} {failure : problem.Input → Probability}
+    (client : UniformRelativeAlgorithmCertificate signature problem relativeBound failure)
     (environment : ImplementationEnvironment signature)
-    (configuration : Linker.Configuration) (linkedBound : Nat → RandomBit.Cost)
+    (configuration : Linker.Configuration) (linkedBound : Nat → UniformReal.Cost)
     (assumptions : LinkingAssumptions client environment configuration linkedBound)
-    (input : problem.Input) (validInput : problem.pre input) (source : RandomBit.Source) :
+    (input : problem.Input) (validInput : problem.pre input) (source : UniformReal.Source) :
     problem.TerminatesWithin (link client.program environment configuration) input source
       (linkedBound (problem.inputSize input)) := by
   rcases client.terminates environment.responder input validInput source with
@@ -696,17 +696,17 @@ theorem terminates
 
 /-- Operational event transfer, independent of any measurability certificate. -/
 theorem successEvent_mono_of
-    {signature : DependencySignature} {problem : BitRandomizedMachineProblem}
-    {relativeBound : Nat → RandomBit.Cost} {failure : problem.Input → Probability}
-    (client : BoundedTimeMonteCarloRelativeCertificate signature problem relativeBound failure)
+    {signature : DependencySignature} {problem : UniformRealRandomizedMachineProblem}
+    {relativeBound : Nat → UniformReal.Cost} {failure : problem.Input → Probability}
+    (client : UniformRelativeAlgorithmCertificate signature problem relativeBound failure)
     (environment : ImplementationEnvironment signature)
-    (configuration : Linker.Configuration) (linkedBound : Nat → RandomBit.Cost)
+    (configuration : Linker.Configuration) (linkedBound : Nat → UniformReal.Cost)
     (compatible : Linker.Compatibility (placement client.program) environment configuration)
     (returnRegisterInitiallyZero : ∀ input,
       (problem.initialMemory input).natReg configuration.returnRegister = 0)
     (boundCovers : BoundCovers client environment linkedBound)
     (input : problem.Input) (validInput : problem.pre input) :
-    RandomRelativeSuccessEvent signature environment.responder problem client.program
+    UniformRelativeSuccessEvent signature environment.responder problem client.program
         relativeBound input ⊆
       problem.SuccessEvent (link client.program environment configuration) input
         (linkedBound (problem.inputSize input)) := by
@@ -732,14 +732,14 @@ theorem successEvent_mono_of
 
 /-- Every relative successful source remains successful after automatic concrete linking. -/
 theorem successEvent_mono
-    {signature : DependencySignature} {problem : BitRandomizedMachineProblem}
-    {relativeBound : Nat → RandomBit.Cost} {failure : problem.Input → Probability}
-    (client : BoundedTimeMonteCarloRelativeCertificate signature problem relativeBound failure)
+    {signature : DependencySignature} {problem : UniformRealRandomizedMachineProblem}
+    {relativeBound : Nat → UniformReal.Cost} {failure : problem.Input → Probability}
+    (client : UniformRelativeAlgorithmCertificate signature problem relativeBound failure)
     (environment : ImplementationEnvironment signature)
-    (configuration : Linker.Configuration) (linkedBound : Nat → RandomBit.Cost)
+    (configuration : Linker.Configuration) (linkedBound : Nat → UniformReal.Cost)
     (assumptions : LinkingAssumptions client environment configuration linkedBound)
     (input : problem.Input) (validInput : problem.pre input) :
-    RandomRelativeSuccessEvent signature environment.responder problem client.program
+    UniformRelativeSuccessEvent signature environment.responder problem client.program
         relativeBound input ⊆
       problem.SuccessEvent (link client.program environment configuration) input
         (linkedBound (problem.inputSize input)) :=
@@ -747,14 +747,14 @@ theorem successEvent_mono
     assumptions.returnRegisterInitiallyZero assumptions.boundCovers input validInput
 
 /-- Automatic publication with no user-supplied operational simulation. -/
-def boundedTimeMonteCarloCertificate
-    {signature : DependencySignature} {problem : BitRandomizedMachineProblem}
-    {relativeBound : Nat → RandomBit.Cost} {failure : problem.Input → Probability}
-    (client : BoundedTimeMonteCarloRelativeCertificate signature problem relativeBound failure)
+def certificate
+    {signature : DependencySignature} {problem : UniformRealRandomizedMachineProblem}
+    {relativeBound : Nat → UniformReal.Cost} {failure : problem.Input → Probability}
+    (client : UniformRelativeAlgorithmCertificate signature problem relativeBound failure)
     (environment : ImplementationEnvironment signature)
-    (configuration : Linker.Configuration) (linkedBound : Nat → RandomBit.Cost)
+    (configuration : Linker.Configuration) (linkedBound : Nat → UniformReal.Cost)
     (assumptions : LinkingAssumptions client environment configuration linkedBound) :
-    BitRandomizedMachineProblem.BoundedTimeMonteCarloAlgorithmCertificate
+    UniformRealRandomizedMachineProblem.BoundedTimeMonteCarloAlgorithmCertificate
       problem linkedBound failure where
   program := link client.program environment configuration
   valid := link_valid client.program environment configuration client.valid
@@ -762,7 +762,7 @@ def boundedTimeMonteCarloCertificate
   solves input validInput := by
     constructor
     · exact terminates client environment configuration linkedBound assumptions input validInput
-    · change RandomBit.sourceLaw
+    · change UniformReal.sourceLaw
           (problem.SuccessEvent (link client.program environment configuration) input
             (linkedBound (problem.inputSize input))) ≥ 1 - (failure input : ENNReal)
       exact (client.successProbability environment.responder input validInput).trans
@@ -771,21 +771,18 @@ def boundedTimeMonteCarloCertificate
 
 /-- One-line existential discharge through the automatic same-source linker. -/
 theorem hasBoundedTimeMonteCarloAlgorithm
-    {signature : DependencySignature} {problem : BitRandomizedMachineProblem}
-    {relativeBound : Nat → RandomBit.Cost} {failure : problem.Input → Probability}
-    (client : BoundedTimeMonteCarloRelativeCertificate signature problem relativeBound failure)
+    {signature : DependencySignature} {problem : UniformRealRandomizedMachineProblem}
+    {relativeBound : Nat → UniformReal.Cost} {failure : problem.Input → Probability}
+    (client : UniformRelativeAlgorithmCertificate signature problem relativeBound failure)
     (environment : ImplementationEnvironment signature)
-    (configuration : Linker.Configuration) (linkedBound : Nat → RandomBit.Cost)
+    (configuration : Linker.Configuration) (linkedBound : Nat → UniformReal.Cost)
     (assumptions : LinkingAssumptions client environment configuration linkedBound) :
     problem.HasBoundedTimeMonteCarloAlgorithm linkedBound failure :=
-  ⟨boundedTimeMonteCarloCertificate client environment configuration linkedBound assumptions⟩
+  ⟨certificate client environment configuration linkedBound assumptions⟩
 
-/-- Compatibility name retained for the pre-taxonomy linker API. -/
-abbrev certificate := @boundedTimeMonteCarloCertificate
-
-/-- Compatibility name retained for the pre-taxonomy existential theorem. -/
+/-- Compatibility name for the explicitly bounded-time discharge theorem. -/
 abbrev hasAlgorithm := @hasBoundedTimeMonteCarloAlgorithm
 
 end
 
-end Algolean.Algorithms.StructuredRealRAM.RandomLinker
+end Algolean.Algorithms.StructuredRealRAM.UniformRealLinker

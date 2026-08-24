@@ -62,8 +62,16 @@ def EveryStoredEdgeSatisfies (graph : DirectedEdgeList w edgeData)
       edge (graph.tail.data.getD index 0).toNat
         (graph.head.data.getD index 0).toNat datum
 
-/-- Compatibility alias; the explicit name records that this is a one-way soundness relation. -/
-abbrev Represents := @EveryStoredEdgeSatisfies
+/-- Exact directed adjacency, deliberately distinct from one-sided stored-entry validation. -/
+def RepresentsExactly (graph : DirectedEdgeList w edgeData)
+    (adjacent : Nat → Nat → Prop) : Prop :=
+  (∀ index, index < graph.edgeCount.toNat →
+    adjacent (graph.tail.data.getD index 0).toNat
+      (graph.head.data.getD index 0).toNat) ∧
+  (∀ tail head, adjacent tail head →
+    ∃ index, index < graph.edgeCount.toNat ∧
+      (graph.tail.data.getD index 0).toNat = tail ∧
+      (graph.head.data.getD index 0).toNat = head)
 
 end DirectedEdgeList
 
@@ -87,9 +95,6 @@ def RepresentsExactly (graph : UndirectedDartList w dartData)
       ∃ dart, dart < graph.dartCount.toNat ∧
         (graph.tail.data.getD dart 0).toNat = left ∧
         (graph.head.data.getD dart 0).toNat = right
-
-/-- Compatibility alias for the exact bidirectional representation relation. -/
-abbrev Represents := @RepresentsExactly
 
 end UndirectedDartList
 
@@ -115,8 +120,15 @@ def EveryStoredEdgeSatisfies (graph : CSRGraph w edgeData)
       ∃ datum, graph.data.data[index]? = some datum ∧
         edge vertex (graph.destination.data.getD index 0).toNat datum
 
-/-- Compatibility alias; the explicit name records that this is a one-way soundness relation. -/
-abbrev Represents := @EveryStoredEdgeSatisfies
+/-- Exact directed adjacency represented by the materialized CSR rows. -/
+def RepresentsExactly (graph : CSRGraph w edgeData)
+    (adjacent : Nat → Nat → Prop) : Prop :=
+  (∀ vertex, vertex < graph.vertexCount.toNat →
+    ∀ index, graph.neighborStart vertex ≤ index → index < graph.neighborEnd vertex →
+      adjacent vertex (graph.destination.data.getD index 0).toNat) ∧
+  (∀ tail head, adjacent tail head → tail < graph.vertexCount.toNat ∧
+    ∃ index, graph.neighborStart tail ≤ index ∧ index < graph.neighborEnd tail ∧
+      (graph.destination.data.getD index 0).toNat = head)
 
 end CSRGraph
 
@@ -134,9 +146,6 @@ def RepresentsExactly (graph : AdjacencyMatrixGraph w edgeData)
     abstract.Adj left right ↔
       graph.present.data.data.getD
         (left.val * graph.vertexCount.toNat + right.val) false
-
-/-- Compatibility alias for the exact bidirectional representation relation. -/
-abbrev Represents := @RepresentsExactly
 
 end AdjacencyMatrixGraph
 

@@ -113,8 +113,8 @@ def RandomRelativeTermination (signature : DependencySignature)
       final result cost steps draws calls ∧
     problem.OutputRep output final ∧ cost ≤ bound (problem.inputSize input)
 
-/-- Relative Monte Carlo proof against every coherent contract responder. -/
-structure RandomRelativeAlgorithmCertificate (signature : DependencySignature)
+/-- Relative bounded-time Monte Carlo proof against every coherent contract responder. -/
+structure BoundedTimeMonteCarloRelativeCertificate (signature : DependencySignature)
     (problem : BitRandomizedMachineProblem) (bound : Nat → RandomBit.Cost)
     (failure : problem.Input → Probability) where
   program : RandomOpenProgram signature
@@ -127,6 +127,9 @@ structure RandomRelativeAlgorithmCertificate (signature : DependencySignature)
     RandomBit.sourceLaw
       (RandomRelativeSuccessEvent signature responder problem program bound input) ≥
       1 - (failure input : ENNReal)
+
+/-- Compatibility name retained for clients written before the randomized-guarantee taxonomy. -/
+abbrev RandomRelativeAlgorithmCertificate := BoundedTimeMonteCarloRelativeCertificate
 
 end
 

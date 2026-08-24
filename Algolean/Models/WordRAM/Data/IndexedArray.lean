@@ -43,6 +43,41 @@ abbrev IndexedArray (w : Nat) (alpha : Type) [Inhabited alpha]
     [CanonicalLayout w alpha] :=
   IndexedArrayWithLayout (layoutOf w alpha)
 
+/-- Closed explicit layout of an addressable array wrapper. -/
+def wordArrayLayout (element : WordLayout w alpha) : WordLayout w (WordArray w alpha) :=
+  .tagged .wordArray (.subtype (fun data : Array alpha ↦ data.size < 2 ^ w)
+    (.array element))
+
+/-- Closed layout of the cached-boundary indexed format, retaining the selected element syntax. -/
+def indexedArrayLayout [Inhabited alpha] (element : WordLayout w alpha) :
+    WordLayout w (IndexedArrayWithLayout element) :=
+  .tagged .indexedArray (.subtype (IndexedArray.Valid element)
+    (.prod (wordArrayLayout .word) (wordArrayLayout element)))
+
+@[simp]
+theorem wordArrayLayout_encode (element : WordLayout w alpha) (values : WordArray w alpha) :
+    (wordArrayLayout element).encode values =
+      BitVec.ofNat w values.size :: element.encodeList values.data.toList := by
+  rcases values with ⟨⟨data, fits⟩⟩
+  simp [wordArrayLayout, WordLayout.encode, WordArray.size, WordArray.data, Tagged.value]
+
+@[simp]
+theorem indexedArrayLayout_encode [Inhabited alpha] (element : WordLayout w alpha)
+    (payload : WordArray w (BitVec w) × WordArray w alpha)
+    (valid : IndexedArray.Valid element payload) :
+    (indexedArrayLayout element).encode (Tagged.mk ⟨payload, valid⟩) =
+      (BitVec.ofNat w payload.1.size :: payload.1.data.toList) ++
+        (BitVec.ofNat w payload.2.size :: element.encodeList payload.2.data.toList) := by
+  simp only [indexedArrayLayout, WordLayout.encode]
+  rw [wordArrayLayout_encode, wordArrayLayout_encode]
+  congr 1
+  induction payload.1.data.toList with
+  | nil => simp [WordLayout.encodeList, WordLayout.encode]
+  | cons head tail induction =>
+      have tailEncoding : (WordLayout.word : WordLayout w (BitVec w)).encodeList tail = tail :=
+        List.cons.inj induction |>.2
+      simp [WordLayout.encodeList, WordLayout.encode, tailEncoding]
+
 /-- The next cached boundary is forced to use the closed layout's actual footprint. -/
 theorem IndexedArray.Valid.nextBoundary [Inhabited alpha]
     {element : WordLayout w alpha}

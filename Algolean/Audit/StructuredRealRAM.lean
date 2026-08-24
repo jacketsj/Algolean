@@ -10,6 +10,9 @@ public import Algolean.Audit.Algorithm
 public import Algolean.Compiler.StructuredRealRAMLinkerCorrectness
 public import Algolean.Compiler.StructuredRealRAMEmbedding
 public import Algolean.Compiler.StructuredRealRAMRandomLinkerCorrectness
+public import Algolean.Compiler.StructuredRealRAMUniformRealLinkerCorrectness
+public import Algolean.Models.StructuredRealRAM.ArithmeticProfile
+public import Algolean.Complexity.StructuredRealRAMRandomizedGuarantees
 
 /-! # Typed audits for the two-bank structured exact-real/natural RAM -/
 
@@ -83,12 +86,35 @@ def ProfileAudit.summary (profile : ProfileAudit) : String :=
   "Input size: represented real cells plus natural cells; not Nat bit length\n" ++
   "Real arithmetic/comparison: exact; source literals are rational\n" ++
   "Division by zero: Lean totalized field division\n" ++
-  "Optional floor/transcendentals: absent from machine-time profiles (query-only effects are separate)\n" ++
-  "Real-to-discrete conversion: absent\n" ++
+  "Optional arithmetic: selected only by a closed ArithmeticProfile\n" ++
+  "Real-to-discrete conversion: absent unless the named floor profile is selected\n" ++
   "Halt counted: yes\n" ++
   "Randomness: " ++ profile.randomness ++ "\n" ++
   "Extensions: " ++ profile.extensions ++ "\n" ++
   "External oracles: " ++ profile.oracles
+
+def stringList (values : List String) : String :=
+  if values.isEmpty then "none" else String.intercalate ", " values
+
+/-- Audit data derived from one closed exact-real arithmetic capability term. -/
+structure ArithmeticProfileAudit where
+  profile : ArithmeticProfile
+  embeddingTheorem : Option Lean.Name := none
+  warnings : List String := []
+
+/-- Print primitive strength, partial domains, constants, and operation-sensitive costs. -/
+def ArithmeticProfileAudit.summary (audit : ArithmeticProfileAudit) : String :=
+  "Storage model: structured exact-real/unbounded-Nat RAM\n" ++
+  "Arithmetic profile: " ++ audit.profile.name ++ "\n" ++
+  "Core primitives: exact +, -, *, / and exact comparison; division is totalized\n" ++
+  "Optional closed primitives: " ++ stringList audit.profile.primitiveNames ++ "\n" ++
+  "Domain semantics: " ++ stringList audit.profile.domainRules ++ "\n" ++
+  "Named constants: " ++ stringList audit.profile.constantNames ++
+    "; no arbitrary Real literal\n" ++
+  "Resource vector: core Cost plus a separate count for every optional primitive\n" ++
+  "Core embedding theorem: " ++
+    (audit.embeddingTheorem.map toString).getD "not supplied" ++ "\n" ++
+  "Warnings: " ++ stringList audit.warnings
 
 /-- Audit data tied directly to one closed structured layout term. -/
 structure LayoutAudit (alpha : Type) where
@@ -97,9 +123,6 @@ structure LayoutAudit (alpha : Type) where
   constantTimeAccessors : List String := []
   scanningOperations : List String := []
   notes : List String := []
-
-def stringList (values : List String) : String :=
-  if values.isEmpty then "none" else String.intercalate ", " values
 
 def footprintText : Option Footprint → String
   | none => "no/unknown"
@@ -165,23 +188,23 @@ structure RelativePublication (signature : DependencySignature)
   boundName : Lean.Name
   correctnessTheorem : Lean.Name
 
-/-- Unresolved randomized client with deterministic typed dependencies. -/
-structure RandomRelativePublication (signature : DependencySignature)
+/-- Unresolved bounded-time Monte Carlo client with deterministic typed dependencies. -/
+structure BoundedTimeMonteCarloRelativePublication (signature : DependencySignature)
     (problem : BitRandomizedMachineProblem) (bound : Nat → RandomBit.Cost)
     (failure : problem.Input → Probability) where
-  certificate : RandomRelativeAlgorithmCertificate signature problem bound failure
+  certificate : BoundedTimeMonteCarloRelativeCertificate signature problem bound failure
   certificateName : Lean.Name
   problemName : Lean.Name
   boundName : Lean.Name
   failureName : Lean.Name
   correctnessTheorem : Lean.Name
 
-/-- Fully resolved randomized publication derived from the automatic same-source linker. -/
-structure RandomLinkedPublication (signature : DependencySignature)
+/-- Fully resolved bounded-time Monte Carlo publication from the same-source linker. -/
+structure BoundedTimeMonteCarloLinkedPublication (signature : DependencySignature)
     (problem : BitRandomizedMachineProblem)
     (relativeBound linkedBound : Nat → RandomBit.Cost)
     (failure : problem.Input → Probability) where
-  client : RandomRelativeAlgorithmCertificate signature problem relativeBound failure
+  client : BoundedTimeMonteCarloRelativeCertificate signature problem relativeBound failure
   implementations : ImplementationEnvironment signature
   configuration : Linker.Configuration
   assumptions : RandomLinker.LinkingAssumptions client implementations configuration linkedBound
@@ -193,14 +216,59 @@ structure RandomLinkedPublication (signature : DependencySignature)
   correctnessTheorem : Lean.Name
   warnings : List String := []
 
+/-- Unresolved exact-uniform-real client with deterministic dependencies. -/
+structure UniformRealRelativePublication (signature : DependencySignature)
+    (problem : UniformRealRandomizedMachineProblem) (bound : Nat → UniformReal.Cost)
+    (failure : problem.Input → Probability) where
+  certificate : UniformRealBoundedTimeMonteCarloRelativeCertificate signature problem
+    bound failure
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  boundName : Lean.Name
+  failureName : Lean.Name
+  correctnessTheorem : Lean.Name
+
+/-- Fully linked exact-uniform-real publication with unchanged sample cursor/count. -/
+structure UniformRealLinkedPublication (signature : DependencySignature)
+    (problem : UniformRealRandomizedMachineProblem)
+    (relativeBound linkedBound : Nat → UniformReal.Cost)
+    (failure : problem.Input → Probability) where
+  client : UniformRealBoundedTimeMonteCarloRelativeCertificate signature problem
+    relativeBound failure
+  implementations : ImplementationEnvironment signature
+  configuration : Linker.Configuration
+  assumptions : UniformRealLinker.LinkingAssumptions client implementations configuration
+    linkedBound
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  relativeBoundName : Lean.Name
+  linkedBoundName : Lean.Name
+  failureName : Lean.Name
+  correctnessTheorem : Lean.Name
+  measurabilityTheorem : Lean.Name
+  warnings : List String := []
+
+noncomputable def UniformRealLinkedPublication.certificate
+    {signature : DependencySignature} {problem : UniformRealRandomizedMachineProblem}
+    {relativeBound linkedBound : Nat → UniformReal.Cost}
+    {failure : problem.Input → Probability}
+    (publication : UniformRealLinkedPublication signature problem relativeBound linkedBound
+      failure) :
+    UniformRealRandomizedMachineProblem.BoundedTimeMonteCarloAlgorithmCertificate
+      problem linkedBound failure :=
+  UniformRealLinker.certificate publication.client publication.implementations
+    publication.configuration linkedBound publication.assumptions
+
 /-- The auditable concrete certificate is produced by the verified operational simulation. -/
-noncomputable def RandomLinkedPublication.certificate
+noncomputable def BoundedTimeMonteCarloLinkedPublication.certificate
     {signature : DependencySignature} {problem : BitRandomizedMachineProblem}
     {relativeBound linkedBound : Nat → RandomBit.Cost}
     {failure : problem.Input → Probability}
-    (publication : RandomLinkedPublication signature problem relativeBound linkedBound failure) :
-    BitRandomizedMachineProblem.MonteCarloAlgorithmCertificate problem linkedBound failure :=
-  RandomLinker.certificate publication.client publication.implementations
+    (publication : BoundedTimeMonteCarloLinkedPublication signature problem relativeBound
+      linkedBound failure) :
+    BitRandomizedMachineProblem.BoundedTimeMonteCarloAlgorithmCertificate
+      problem linkedBound failure :=
+  RandomLinker.boundedTimeMonteCarloCertificate publication.client publication.implementations
     publication.configuration linkedBound publication.assumptions
 
 /-- Fully resolved shared-body linked publication. -/
@@ -275,15 +343,17 @@ def RelativePublication.summary (publication : RelativePublication signature pro
   "Correctness theorem: " ++ toString publication.correctnessTheorem
 
 /-- Relative randomized certificates remain visibly non-publication claims. -/
-def RandomRelativePublication.summary
+def BoundedTimeMonteCarloRelativePublication.summary
     {signature : DependencySignature} {problem : BitRandomizedMachineProblem}
     {bound : Nat → RandomBit.Cost} {failure : problem.Input → Probability}
-    (publication : RandomRelativePublication signature problem bound failure) : String :=
+    (publication : BoundedTimeMonteCarloRelativePublication signature problem bound failure) :
+    String :=
   "RELATIVE RANDOMIZED ALGORITHM CERTIFICATE\n" ++
   "THIS IS NOT YET AN UNCONDITIONAL STRUCTURED REAL-RAM ALGORITHM\n" ++
   "Certificate: " ++ toString publication.certificateName ++ "\n" ++
   "Problem: " ++ toString publication.problemName ++ "\n" ++
   "Machine profile: " ++ RandomBit.profile.name ++ "\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.boundedTimeMonteCarlo.summary ++ "\n" ++
   "Random-source length observable: no\n" ++
   "Random cursor across dependency calls: preserved and unobservable\n" ++
   "Unresolved deterministic operations: " ++ toString (Fintype.card signature.Op) ++ "\n" ++
@@ -293,14 +363,15 @@ def RandomRelativePublication.summary
   "Correctness theorem: " ++ toString publication.correctnessTheorem
 
 /-- Concrete randomized audit, including linked syntax and hidden-source invariants. -/
-noncomputable def RandomLinkedPublication.summary
+noncomputable def BoundedTimeMonteCarloLinkedPublication.summary
     {signature : DependencySignature} {problem : BitRandomizedMachineProblem}
     {relativeBound linkedBound : Nat → RandomBit.Cost}
     {failure : problem.Input → Probability}
-    (publication : RandomLinkedPublication signature problem relativeBound linkedBound failure) :
-    String :=
+    (publication : BoundedTimeMonteCarloLinkedPublication signature problem relativeBound
+      linkedBound failure) : String :=
   let certificate := publication.certificate
-  "Claim kind: concrete linked randomized structured exact-real/natural RAM algorithm\n" ++
+  "Claim kind: concrete linked bounded-time Monte Carlo structured real/Nat RAM algorithm\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.boundedTimeMonteCarlo.summary ++ "\n" ++
   "Linked status: fully resolved, unconditional\n" ++
   "Machine profile: " ++ RandomBit.profile.name ++ "\n" ++
   "Certificate: " ++ toString publication.certificateName ++ "\n" ++
@@ -321,6 +392,42 @@ noncomputable def RandomLinkedPublication.summary
   "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
   "Warnings: " ++ stringList publication.warnings ++ "\n" ++
   "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
+
+def UniformRealRelativePublication.summary
+    {signature : DependencySignature} {problem : UniformRealRandomizedMachineProblem}
+    {bound : Nat → UniformReal.Cost} {failure : problem.Input → Probability}
+    (publication : UniformRealRelativePublication signature problem bound failure) : String :=
+  "RELATIVE EXACT-UNIFORM-REAL BOUNDED-TIME MONTE CARLO CERTIFICATE\n" ++
+  "THIS IS NOT YET AN UNCONDITIONAL STRUCTURED REAL-RAM ALGORITHM\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.boundedTimeMonteCarlo.summary ++ "\n" ++
+  "Machine profile: " ++ UniformReal.profile.name ++ "\n" ++
+  "Source: hidden lengthless iid exact uniform [0,1] values\n" ++
+  "Unresolved deterministic operations: " ++ toString (Fintype.card signature.Op) ++ "\n" ++
+  "Same source/cursor contract: preserved across every abstract call\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem
+
+noncomputable def UniformRealLinkedPublication.summary
+    {signature : DependencySignature} {problem : UniformRealRandomizedMachineProblem}
+    {relativeBound linkedBound : Nat → UniformReal.Cost}
+    {failure : problem.Input → Probability}
+    (publication : UniformRealLinkedPublication signature problem relativeBound linkedBound
+      failure) : String :=
+  let certificate := publication.certificate
+  "Claim kind: fully linked exact-uniform-real bounded-time Monte Carlo algorithm\n" ++
+  "Linked status: concrete, unconditional\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.boundedTimeMonteCarlo.summary ++ "\n" ++
+  "Machine profile: " ++ UniformReal.profile.name ++ "\n" ++
+  "Same hidden source and cursor preserved: yes\n" ++
+  "Deterministic calls consume samples: no\n" ++
+  "Every callee instruction charged: yes\n" ++
+  "Body sharing: one relocated body per operation\n" ++
+  "Link overhead: derived from emitted syntax\n" ++
+  "Program instruction/description size: " ++ toString certificate.program.length ++ " / " ++
+    toString certificate.program.descriptionSize ++ " bits\n" ++
+  "Relative/linked bounds: " ++ toString publication.relativeBoundName ++ " / " ++
+    toString publication.linkedBoundName ++ "\n" ++
+  "Measurability theorem: " ++ toString publication.measurabilityTheorem ++ "\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem
 
 noncomputable def LinkedPublication.summary
     (publication : LinkedPublication signature problem relativeBound linkedBound) : String :=
@@ -360,22 +467,40 @@ noncomputable instance structuredRealRAMRelativeAuditable : AuditablePublication
     (StructuredRealRAM.Audit.RelativePublication signature problem bound) :=
   ⟨StructuredRealRAM.Audit.RelativePublication.summary⟩
 
-noncomputable instance structuredRealRAMRandomRelativeAuditable
+noncomputable instance structuredRealRAMBoundedTimeMonteCarloRelativeAuditable
     {signature : StructuredRealRAM.DependencySignature}
     {problem : BitRandomizedMachineProblem}
     {bound : Nat → StructuredRealRAM.RandomBit.Cost}
     {failure : problem.Input → Probability} : AuditablePublication
-    (StructuredRealRAM.Audit.RandomRelativePublication signature problem bound failure) :=
-  ⟨StructuredRealRAM.Audit.RandomRelativePublication.summary⟩
+    (StructuredRealRAM.Audit.BoundedTimeMonteCarloRelativePublication signature problem bound
+      failure) :=
+  ⟨StructuredRealRAM.Audit.BoundedTimeMonteCarloRelativePublication.summary⟩
 
-noncomputable instance structuredRealRAMRandomLinkedAuditable
+noncomputable instance structuredRealRAMBoundedTimeMonteCarloLinkedAuditable
     {signature : StructuredRealRAM.DependencySignature}
     {problem : BitRandomizedMachineProblem}
     {relativeBound linkedBound : Nat → StructuredRealRAM.RandomBit.Cost}
     {failure : problem.Input → Probability} : AuditablePublication
-    (StructuredRealRAM.Audit.RandomLinkedPublication signature problem relativeBound linkedBound
-      failure) :=
-  ⟨StructuredRealRAM.Audit.RandomLinkedPublication.summary⟩
+    (StructuredRealRAM.Audit.BoundedTimeMonteCarloLinkedPublication signature problem
+      relativeBound linkedBound failure) :=
+  ⟨StructuredRealRAM.Audit.BoundedTimeMonteCarloLinkedPublication.summary⟩
+
+noncomputable instance structuredRealRAMUniformRealRelativeAuditable
+    {signature : StructuredRealRAM.DependencySignature}
+    {problem : UniformRealRandomizedMachineProblem}
+    {bound : Nat → StructuredRealRAM.UniformReal.Cost}
+    {failure : problem.Input → Probability} : AuditablePublication
+    (StructuredRealRAM.Audit.UniformRealRelativePublication signature problem bound failure) :=
+  ⟨StructuredRealRAM.Audit.UniformRealRelativePublication.summary⟩
+
+noncomputable instance structuredRealRAMUniformRealLinkedAuditable
+    {signature : StructuredRealRAM.DependencySignature}
+    {problem : UniformRealRandomizedMachineProblem}
+    {relativeBound linkedBound : Nat → StructuredRealRAM.UniformReal.Cost}
+    {failure : problem.Input → Probability} : AuditablePublication
+    (StructuredRealRAM.Audit.UniformRealLinkedPublication signature problem relativeBound
+      linkedBound failure) :=
+  ⟨StructuredRealRAM.Audit.UniformRealLinkedPublication.summary⟩
 
 noncomputable instance structuredRealRAMLinkedAuditable : AuditablePublication
     (StructuredRealRAM.Audit.LinkedPublication signature problem relativeBound linkedBound) :=
@@ -400,3 +525,13 @@ syntax (name := machineProfileAuditCmd) "#machine_profile_audit" term : command
 macro_rules
   | `(#machine_profile_audit $profile:term) =>
       `(#eval Algolean.Algorithms.StructuredRealRAM.Audit.ProfileAudit.summary $profile)
+
+/-- Print the strength and semantics of one closed exact-real arithmetic profile. -/
+@[nolint topNamespace]
+syntax (name := arithmeticProfileAuditCmd) "#arithmetic_profile_audit" term : command
+
+macro_rules
+  | `(#arithmetic_profile_audit $profile:term) =>
+      `(#eval Algolean.Algorithms.StructuredRealRAM.Audit.ArithmeticProfileAudit.summary
+          ({ profile := $profile } :
+            Algolean.Algorithms.StructuredRealRAM.Audit.ArithmeticProfileAudit))

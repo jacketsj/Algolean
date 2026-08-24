@@ -226,7 +226,8 @@ semantics and must not be described as ordinary uniform generation.
 labels, `CFG.compile_length` reports exact target instruction count, and
 `CFG.compile_descriptionSize` includes generated numeric targets.
 
-Preferred randomized statements use `BitRandomizedMachineProblem.HasMonteCarloAlgorithm` and
+Preferred bounded-time randomized statements use
+`BitRandomizedMachineProblem.HasBoundedTimeMonteCarloAlgorithm` and
 `HasEverySourceLasVegasStepAlgorithm`. The library fixes a hidden, lengthless iid fair-bit product
 source. The closed `randBit` instruction consumes one coordinate, advances an inaccessible cursor,
 and charges the draw in the same trace; failure values carry a proof that they are at most one.
@@ -235,7 +236,8 @@ input-dependent advice. `ScheduledBitTapeProblem` is likewise explicitly relativ
 observable size-indexed tape-length schedule.
 
 Applications needing exact continuous randomness should use the separately named
-`UniformRealRandomizedMachineProblem.HasMonteCarloAlgorithm`. Its `sampleUniform` instruction
+`UniformRealRandomizedMachineProblem.HasBoundedTimeMonteCarloAlgorithm`. Its `sampleUniform`
+instruction
 draws from a hidden product source of exact uniform `[0,1]` values. This is explicitly a stronger
 machine than the random-bit RAM; a Gaussian or other distribution is not silently treated as the
 same primitive. Its certificate proves that the success event is measurable. The core structured

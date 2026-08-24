@@ -17,6 +17,7 @@ public import Algolean.Complexity.WordRAMUniformProcedure
 public import Algolean.Complexity.WordRAMUniformLinking
 public import Algolean.Models.WordRAM.TypedRegion
 public import Algolean.Models.WordRAM.Profile
+public import Algolean.Complexity.WordRAMDerivedOperations
 
 /-!
 # Typed Word-RAM layout and algorithm audit artifacts
@@ -25,6 +26,8 @@ public import Algolean.Models.WordRAM.Profile
 @[expose] public section
 
 namespace Algolean.Algorithms.WordRAM.Audit
+
+open MeasureTheory
 
 /-- Printable audit information tied directly to one closed layout term. -/
 structure LayoutAudit (w : ℕ) (alpha : Type) where
@@ -60,6 +63,34 @@ def LayoutAudit.summary (report : LayoutAudit w alpha) : String :=
   "Scanning operations: " ++ stringList report.scanningOperations ++ "\n" ++
   "Notes: " ++ stringList report.notes
 
+/-- Named physical graph format; no abstract graph enumeration is selected here. -/
+inductive PhysicalGraphFormat where
+  | directedEdgeList | undirectedDartList | csr | adjacencyMatrix
+deriving DecidableEq, Repr
+
+/-- Audit disclosure for an already materialized physical graph representation. -/
+structure PhysicalGraphAudit (w : Nat) where
+  format : PhysicalGraphFormat
+  payloadLayout : String
+  vertexCountLocation : String
+  edgeCountLocation : String
+  reverseMap : Bool
+  neighborAccess : String
+  footprint : String
+
+def PhysicalGraphAudit.summary (audit : PhysicalGraphAudit w) : String :=
+  "Machine model: fixed-width Word RAM\n" ++
+  "Word width: " ++ toString w ++ "\n" ++
+  "Physical graph format: " ++ reprStr audit.format ++ "\n" ++
+  "Payload layout: " ++ audit.payloadLayout ++ "\n" ++
+  "Vertex-count location: " ++ audit.vertexCountLocation ++ "\n" ++
+  "Edge/dart-count location: " ++ audit.edgeCountLocation ++ "\n" ++
+  "Reverse map present: " ++ toString audit.reverseMap ++ "\n" ++
+  "Neighbor access: " ++ audit.neighborAccess ++ "\n" ++
+  "Footprint: " ++ audit.footprint ++ "\n" ++
+  "Semantic predicates: EveryStoredEdgeSatisfies (one-sided) and RepresentsExactly (two-sided)\n" ++
+  "Conversion from another representation: charged certified algorithm; never a layout codec"
+
 /-- Resolve a class-selected layout once and build its basic typed audit record. -/
 def canonicalLayoutAudit (w : ℕ) (alpha : Type) [CanonicalLayout w alpha] :
     LayoutAudit w alpha where
@@ -92,11 +123,18 @@ structure UniformPublication (family : UniformStructuredProblem)
   correctnessTheorem : Lean.Name
   warnings : List String := []
 
-/-- Typed publication artifact for the hidden-source randomized profile. -/
-structure RandomizedPublication (problem : StructuredProblem w)
+/-- Audit artifact for a finite certified rich-operation library and its core lowering. -/
+structure DerivedOperationLibraryPublication (library : PreprocessedWordOperationLibrary w) where
+  libraryName : Lean.Name
+  initializationTheorem : Lean.Name
+  loweringTheorem : Lean.Name
+  warnings : List String := []
+
+/-- Typed publication artifact for high-probability bounded success. -/
+structure HighProbabilityBoundedSuccessPublication (problem : StructuredProblem w)
     (stepBound drawBound : problem.Input → Nat)
     (failure : problem.Input → Probability) where
-  certificate : problem.RandomizedAlgorithmCertificate stepBound drawBound failure
+  certificate : problem.HighProbabilityBoundedSuccessCertificate stepBound drawBound failure
   certificateName : Lean.Name
   problemName : Lean.Name
   stepBoundName : Lean.Name
@@ -105,11 +143,131 @@ structure RandomizedPublication (problem : StructuredProblem w)
   correctnessTheorem : Lean.Name
   warnings : List String := []
 
-/-- Typed audit artifact for an unresolved randomized client with deterministic dependencies. -/
-structure RandomRelativePublication (signature : DependencySignature w)
+/-- Every-source-time two-sided-error publication; timeout is not part of its error event. -/
+structure BoundedTimeMonteCarloPublication (problem : StructuredProblem w)
+    (stepBound drawBound : problem.Input → Nat)
+    (failure : problem.Input → Probability) where
+  certificate : problem.BoundedTimeMonteCarloCertificate stepBound drawBound failure
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  stepBoundName : Lean.Name
+  drawBoundName : Lean.Name
+  failureName : Lean.Name
+  correctnessTheorem : Lean.Name
+  measurabilityTheorem : Lean.Name
+  warnings : List String := []
+
+/-- Every-source-time RP-oriented one-sided-error publication. -/
+structure OneSidedBoundedTimeMonteCarloPublication (problem : StructuredProblem w)
+    (specification : StructuredProblem.OneSidedDecisionSpec problem)
+    (stepBound drawBound : problem.Input → Nat)
+    (failure : problem.Input → Probability) where
+  certificate : problem.OneSidedBoundedTimeMonteCarloCertificate specification
+    stepBound drawBound failure
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  specificationName : Lean.Name
+  stepBoundName : Lean.Name
+  drawBoundName : Lean.Name
+  failureName : Lean.Name
+  correctnessTheorem : Lean.Name
+  measurabilityTheorem : Lean.Name
+  warnings : List String := []
+
+/-- Every-source-time coRP-oriented one-sided-error publication. -/
+structure CoOneSidedBoundedTimeMonteCarloPublication (problem : StructuredProblem w)
+    (specification : StructuredProblem.OneSidedDecisionSpec problem)
+    (stepBound drawBound : problem.Input → Nat)
+    (failure : problem.Input → Probability) where
+  certificate : problem.CoOneSidedBoundedTimeMonteCarloCertificate specification
+    stepBound drawBound failure
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  specificationName : Lean.Name
+  stepBoundName : Lean.Name
+  drawBoundName : Lean.Name
+  failureName : Lean.Name
+  correctnessTheorem : Lean.Name
+  measurabilityTheorem : Lean.Name
+  warnings : List String := []
+
+/-- Zero-error almost-sure-termination publication without an expected-time claim. -/
+structure AlmostSureLasVegasPublication (problem : StructuredProblem w) where
+  certificate : problem.AlmostSureLasVegasCertificate
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  terminationMeasurabilityTheorem : Lean.Name
+  correctnessTheorem : Lean.Name
+  warnings : List String := []
+
+/-- Zero-error finite-expected-time publication. -/
+structure LasVegasExpectedTimePublication (problem : StructuredProblem w)
+    (expectedStepBound : problem.Input → ENNReal) where
+  certificate : problem.LasVegasExpectedTimeCertificate expectedStepBound
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  expectedStepBoundName : Lean.Name
+  terminationMeasurabilityTheorem : Lean.Name
+  runtimeMeasurabilityTheorem : Lean.Name
+  correctnessTheorem : Lean.Name
+  warnings : List String := []
+
+/-- Zero-error almost-sure publication with a high-probability time/draw envelope. -/
+structure LasVegasHighProbabilityTimePublication (problem : StructuredProblem w)
+    (stepBound drawBound : problem.Input → Nat)
+    (timeout : problem.Input → Probability) where
+  certificate : problem.LasVegasHighProbabilityTimeCertificate stepBound drawBound timeout
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  stepBoundName : Lean.Name
+  drawBoundName : Lean.Name
+  timeoutName : Lean.Name
+  terminationMeasurabilityTheorem : Lean.Name
+  withinMeasurabilityTheorem : Lean.Name
+  correctnessTheorem : Lean.Name
+  warnings : List String := []
+
+/-- Expected measurable approximation-loss publication. -/
+structure ExpectedApproximationPublication (problem : StructuredProblem w)
+    (loss : problem.Input → problem.Output → ENNReal)
+    (expectedLossBound : problem.Input → ENNReal) where
+  certificate : problem.ExpectedApproximationCertificate loss expectedLossBound
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  lossName : Lean.Name
+  expectedLossBoundName : Lean.Name
+  measurabilityTheorem : Lean.Name
+  correctnessTheorem : Lean.Name
+  warnings : List String := []
+
+/-- Exact output-distribution publication. -/
+structure SamplerPublication (problem : StructuredProblem w)
+    [MeasurableSpace problem.Output] (target : problem.Input → Measure problem.Output) where
+  certificate : problem.SamplerCertificate target
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  targetName : Lean.Name
+  measurabilityTheorem : Lean.Name
+  distributionTheorem : Lean.Name
+  warnings : List String := []
+
+/-- Strong zero-error every-source-time publication. -/
+structure EverySourceLasVegasPublication (problem : StructuredProblem w)
+    (stepBound drawBound : problem.Input → Nat) where
+  certificate : problem.EverySourceLasVegasCertificate stepBound drawBound
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  stepBoundName : Lean.Name
+  drawBoundName : Lean.Name
+  correctnessTheorem : Lean.Name
+  warnings : List String := []
+
+/-- Unresolved high-probability bounded-success client with deterministic dependencies. -/
+structure HighProbabilityBoundedSuccessRelativePublication (signature : DependencySignature w)
     (problem : StructuredProblem w) (stepBound drawBound : problem.Input → Nat)
     (failure : problem.Input → Probability) where
-  certificate : RandomRelativeAlgorithmCertificate signature problem stepBound drawBound failure
+  certificate : HighProbabilityBoundedSuccessRelativeCertificate signature problem
+    stepBound drawBound failure
   certificateName : Lean.Name
   problemName : Lean.Name
   stepBoundName : Lean.Name
@@ -117,11 +275,25 @@ structure RandomRelativePublication (signature : DependencySignature w)
   failureName : Lean.Name
   correctnessTheorem : Lean.Name
 
-/-- Typed publication derived from the automatic same-source randomized linker. -/
-structure RandomLinkedPublication (signature : DependencySignature w)
+/-- Unresolved every-source-time Monte Carlo client. -/
+structure BoundedTimeMonteCarloRelativePublication (signature : DependencySignature w)
+    (problem : StructuredProblem w) (stepBound drawBound : problem.Input → Nat)
+    (failure : problem.Input → Probability) where
+  certificate : BoundedTimeMonteCarloRelativeCertificate signature problem
+    stepBound drawBound failure
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  stepBoundName : Lean.Name
+  drawBoundName : Lean.Name
+  failureName : Lean.Name
+  correctnessTheorem : Lean.Name
+
+/-- Fully linked high-probability bounded-success publication. -/
+structure HighProbabilityBoundedSuccessLinkedPublication (signature : DependencySignature w)
     (problem : StructuredProblem w) (stepBound drawBound overheadBound : problem.Input → Nat)
     (failure : problem.Input → Probability) where
-  client : RandomRelativeAlgorithmCertificate signature problem stepBound drawBound failure
+  client : HighProbabilityBoundedSuccessRelativeCertificate signature problem
+    stepBound drawBound failure
   implementations : ImplementationEnvironment signature
   configuration : Linker.Configuration w
   assumptions : RandomLinker.LinkingAssumptions client implementations configuration overheadBound
@@ -134,14 +306,44 @@ structure RandomLinkedPublication (signature : DependencySignature w)
   correctnessTheorem : Lean.Name
   warnings : List String := []
 
-/-- The actual unconditional certificate is computed by the verified linker. -/
-noncomputable def RandomLinkedPublication.certificate
+/-- Fully resolved linker publication preserving every-source termination. -/
+structure BoundedTimeMonteCarloLinkedPublication (signature : DependencySignature w)
+    (problem : StructuredProblem w) (stepBound drawBound overheadBound : problem.Input → Nat)
+    (failure : problem.Input → Probability) where
+  client : BoundedTimeMonteCarloRelativeCertificate signature problem
+    stepBound drawBound failure
+  implementations : ImplementationEnvironment signature
+  configuration : Linker.Configuration w
+  assumptions : RandomLinker.BoundedTimeLinkingAssumptions client implementations
+    configuration overheadBound
+  certificateName : Lean.Name
+  problemName : Lean.Name
+  stepBoundName : Lean.Name
+  drawBoundName : Lean.Name
+  overheadBoundName : Lean.Name
+  failureName : Lean.Name
+  correctnessTheorem : Lean.Name
+  warnings : List String := []
+
+noncomputable def BoundedTimeMonteCarloLinkedPublication.certificate
     {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
     {stepBound drawBound overheadBound : problem.Input → Nat}
     {failure : problem.Input → Probability}
-    (publication : RandomLinkedPublication signature problem stepBound drawBound overheadBound
-      failure) :
-    problem.RandomizedAlgorithmCertificate
+    (publication : BoundedTimeMonteCarloLinkedPublication signature problem stepBound drawBound
+      overheadBound failure) :
+    problem.BoundedTimeMonteCarloCertificate
+      (RandomLinker.linkedStepBound stepBound overheadBound) drawBound failure :=
+  RandomLinker.boundedTimeCertificate publication.client publication.implementations
+    publication.configuration overheadBound publication.assumptions
+
+/-- The actual unconditional certificate is computed by the verified linker. -/
+noncomputable def HighProbabilityBoundedSuccessLinkedPublication.certificate
+    {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
+    {stepBound drawBound overheadBound : problem.Input → Nat}
+    {failure : problem.Input → Probability}
+    (publication : HighProbabilityBoundedSuccessLinkedPublication signature problem stepBound
+      drawBound overheadBound failure) :
+    problem.HighProbabilityBoundedSuccessCertificate
       (RandomLinker.linkedStepBound stepBound overheadBound) drawBound failure :=
   RandomLinker.certificate publication.client publication.implementations
     publication.configuration overheadBound publication.assumptions
@@ -250,12 +452,39 @@ def UniformPublication.summary (publication : UniformPublication family bound) :
   "Warnings: " ++ stringList publication.warnings ++ "\n" ++
   "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
 
+noncomputable def DerivedOperationLibraryPublication.summary
+    {w : Nat} {library : PreprocessedWordOperationLibrary w}
+    (publication : DerivedOperationLibraryPublication library) : String :=
+  "Claim kind: certified derived Word-RAM operation library\n" ++
+  "Library: " ++ toString publication.libraryName ++ "\n" ++
+  "Word width: " ++ toString w ++ "\n" ++
+  "Primitive core operations: sealed Word-RAM Profile instruction syntax\n" ++
+  "Derived operations: " ++ reprStr library.derivedOperations ++ "\n" ++
+  "Arbitrary host word callback: absent\n" ++
+  "Initialization operation: one distinguished restoring procedure\n" ++
+  "Initialization execution count: exactly one, proved from the dynamic call trace\n" ++
+  "Preprocessing table base/words: " ++ toString library.tableRegion.base.toNat ++ " / " ++
+    toString library.tableWords ++ "\n" ++
+  "Table after initialization: read-only for every non-initializer procedure trace\n" ++
+  "Width relation: " ++ library.assumptions.widthRelation ++ "\n" ++
+  "Maximum register/address: " ++ toString library.assumptions.maximumRegisterValue ++ " / " ++
+    toString library.assumptions.maximumAddress ++ "\n" ++
+  "Declared core space/preprocessing words: " ++ toString library.assumptions.spaceWords ++
+    " / " ++ toString library.assumptions.polynomialIntegerWords ++ "\n" ++
+  "Lowering: shared bodies; every initializer/operation instruction remains in the core trace\n" ++
+  "Initialization theorem: " ++ toString publication.initializationTheorem ++ "\n" ++
+  "Lowering theorem: " ++ toString publication.loweringTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings
+
 /-- Randomized audits disclose the hidden lengthless source and both same-trace resources. -/
-def RandomizedPublication.summary {w : Nat} {problem : StructuredProblem w}
+def HighProbabilityBoundedSuccessPublication.summary
+    {w : Nat} {problem : StructuredProblem w}
     {stepBound drawBound : problem.Input → Nat} {failure : problem.Input → Probability}
-    (publication : RandomizedPublication problem stepBound drawBound failure) : String :=
+    (publication : HighProbabilityBoundedSuccessPublication problem stepBound drawBound failure) :
+    String :=
   let program := publication.certificate.program
-  "Claim kind: randomized fixed-width Word-RAM algorithm\n" ++
+  "Claim kind: high-probability bounded-success fixed-width Word-RAM algorithm\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.highProbabilityBoundedSuccess.summary ++ "\n" ++
   "Randomness: hidden lengthless iid fair-bit source\n" ++
   "Random-source length observable: no\n" ++
   "Random instruction: sealed randBit; one draw and one step per sample\n" ++
@@ -269,24 +498,167 @@ def RandomizedPublication.summary {w : Nat} {problem : StructuredProblem w}
   "Step bound: " ++ toString publication.stepBoundName ++ "\n" ++
   "Random-draw bound: " ++ toString publication.drawBoundName ++ "\n" ++
   "Failure probability: " ++ toString publication.failureName ++ " (typed ≤ 1)\n" ++
-  "Termination semantics: success event; every-source Las Vegas is separately named\n" ++
+  "Measurability theorem: carried by the typed certificate\n" ++
   "Cost/output/draw source: same randomized HaltingTrace\n" ++
   "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
   "Warnings: " ++ stringList publication.warnings ++ "\n" ++
   "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
 
+def BoundedTimeMonteCarloPublication.summary
+    {w : Nat} {problem : StructuredProblem w}
+    {stepBound drawBound : problem.Input → Nat} {failure : problem.Input → Probability}
+    (publication : BoundedTimeMonteCarloPublication problem stepBound drawBound failure) : String :=
+  let program := publication.certificate.program
+  "Claim kind: bounded-time Monte Carlo fixed-width Word-RAM algorithm\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.boundedTimeMonteCarlo.summary ++ "\n" ++
+  "Source: hidden iid fair bits\nSource visible length: none\n" ++
+  "Certificate: " ++ toString publication.certificateName ++ "\n" ++
+  "Problem: " ++ toString publication.problemName ++ "\n" ++
+  "Word width: " ++ toString w ++ "\n" ++
+  "Program instruction/description size: " ++ toString program.length ++ " / " ++
+    toString program.descriptionSize ++ " bits\n" ++
+  "Step/draw bounds: " ++ toString publication.stepBoundName ++ " / " ++
+    toString publication.drawBoundName ++ "\n" ++
+  "Failure probability: " ++ toString publication.failureName ++ " (typed ≤ 1)\n" ++
+  "Measurability theorem: " ++ toString publication.measurabilityTheorem ++ "\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings
+
+def hiddenFairBitHeader (w : Nat) (program : RandomBit.Program w) : String :=
+  "Random source profile: hidden lengthless iid fair bits\n" ++
+  "Source visible length: none\n" ++
+  "Sample operation: sealed randBit; one draw is charged in the same trace\n" ++
+  "Program instruction/description size: " ++ toString program.length ++ " / " ++
+    toString program.descriptionSize ++ " bits\n"
+
+def OneSidedBoundedTimeMonteCarloPublication.summary
+    {w : Nat} {problem : StructuredProblem w}
+    {specification : StructuredProblem.OneSidedDecisionSpec problem}
+    {stepBound drawBound : problem.Input → Nat} {failure : problem.Input → Probability}
+    (publication : OneSidedBoundedTimeMonteCarloPublication problem specification
+      stepBound drawBound failure) : String :=
+  "Claim kind: one-sided bounded-time Monte Carlo Word-RAM algorithm\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.oneSidedBoundedTimeMonteCarlo.summary ++ "\n" ++
+  hiddenFairBitHeader w publication.certificate.program ++
+  "Decision specification: " ++ toString publication.specificationName ++ "\n" ++
+  "Step/draw bounds: " ++ toString publication.stepBoundName ++ " / " ++
+    toString publication.drawBoundName ++ "\n" ++
+  "Failure probability: " ++ toString publication.failureName ++ " (typed ≤ 1)\n" ++
+  "Measurability theorem: " ++ toString publication.measurabilityTheorem ++ "\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings
+
+def CoOneSidedBoundedTimeMonteCarloPublication.summary
+    {w : Nat} {problem : StructuredProblem w}
+    {specification : StructuredProblem.OneSidedDecisionSpec problem}
+    {stepBound drawBound : problem.Input → Nat} {failure : problem.Input → Probability}
+    (publication : CoOneSidedBoundedTimeMonteCarloPublication problem specification
+      stepBound drawBound failure) : String :=
+  "Claim kind: co-one-sided bounded-time Monte Carlo Word-RAM algorithm\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.coOneSidedBoundedTimeMonteCarlo.summary ++
+    "\n" ++
+  hiddenFairBitHeader w publication.certificate.program ++
+  "Decision specification: " ++ toString publication.specificationName ++ "\n" ++
+  "Step/draw bounds: " ++ toString publication.stepBoundName ++ " / " ++
+    toString publication.drawBoundName ++ "\n" ++
+  "Failure probability: " ++ toString publication.failureName ++ " (typed ≤ 1)\n" ++
+  "Measurability theorem: " ++ toString publication.measurabilityTheorem ++ "\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings
+
+def AlmostSureLasVegasPublication.summary
+    {w : Nat} {problem : StructuredProblem w}
+    (publication : AlmostSureLasVegasPublication problem) : String :=
+  "Claim kind: almost-sure Las Vegas Word-RAM algorithm\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.almostSureLasVegas.summary ++ "\n" ++
+  hiddenFairBitHeader w publication.certificate.program ++
+  "Termination measurability theorem: " ++
+    toString publication.terminationMeasurabilityTheorem ++ "\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings
+
+def LasVegasExpectedTimePublication.summary
+    {w : Nat} {problem : StructuredProblem w} {expectedStepBound : problem.Input → ENNReal}
+    (publication : LasVegasExpectedTimePublication problem expectedStepBound) : String :=
+  "Claim kind: finite-expected-time Las Vegas Word-RAM algorithm\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.expectedTimeLasVegas.summary ++ "\n" ++
+  hiddenFairBitHeader w publication.certificate.program ++
+  "Expected-step bound: " ++ toString publication.expectedStepBoundName ++ "\n" ++
+  "Termination/runtime measurability theorems: " ++
+    toString publication.terminationMeasurabilityTheorem ++ " / " ++
+    toString publication.runtimeMeasurabilityTheorem ++ "\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings
+
+def LasVegasHighProbabilityTimePublication.summary
+    {w : Nat} {problem : StructuredProblem w}
+    {stepBound drawBound : problem.Input → Nat} {timeout : problem.Input → Probability}
+    (publication : LasVegasHighProbabilityTimePublication problem stepBound drawBound timeout) :
+    String :=
+  "Claim kind: high-probability-time Las Vegas Word-RAM algorithm\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.highProbabilityTimeLasVegas.summary ++ "\n" ++
+  hiddenFairBitHeader w publication.certificate.program ++
+  "Step/draw bounds: " ++ toString publication.stepBoundName ++ " / " ++
+    toString publication.drawBoundName ++ "\n" ++
+  "Timeout probability: " ++ toString publication.timeoutName ++ " (typed ≤ 1)\n" ++
+  "Termination/within-bound measurability theorems: " ++
+    toString publication.terminationMeasurabilityTheorem ++ " / " ++
+    toString publication.withinMeasurabilityTheorem ++ "\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings
+
+def ExpectedApproximationPublication.summary
+    {w : Nat} {problem : StructuredProblem w}
+    {loss : problem.Input → problem.Output → ENNReal}
+    {expectedLossBound : problem.Input → ENNReal}
+    (publication : ExpectedApproximationPublication problem loss expectedLossBound) : String :=
+  "Claim kind: expected-approximation Word-RAM algorithm\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.expectedApproximation.summary ++ "\n" ++
+  hiddenFairBitHeader w publication.certificate.program ++
+  "Loss/bound declarations: " ++ toString publication.lossName ++ " / " ++
+    toString publication.expectedLossBoundName ++ "\n" ++
+  "Measurability theorem: " ++ toString publication.measurabilityTheorem ++ "\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings
+
+def SamplerPublication.summary
+    {w : Nat} {problem : StructuredProblem w} [MeasurableSpace problem.Output]
+    {target : problem.Input → Measure problem.Output}
+    (publication : SamplerPublication problem target) : String :=
+  "Claim kind: exact distributional Word-RAM sampler\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.exactSampler.summary ++ "\n" ++
+  hiddenFairBitHeader w publication.certificate.program ++
+  "Target distribution: " ++ toString publication.targetName ++ "\n" ++
+  "Output measurability theorem: " ++ toString publication.measurabilityTheorem ++ "\n" ++
+  "Distribution theorem: " ++ toString publication.distributionTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings
+
+def EverySourceLasVegasPublication.summary
+    {w : Nat} {problem : StructuredProblem w}
+    {stepBound drawBound : problem.Input → Nat}
+    (publication : EverySourceLasVegasPublication problem stepBound drawBound) : String :=
+  "Claim kind: every-source bounded Las Vegas Word-RAM algorithm\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.everySourceLasVegas.summary ++ "\n" ++
+  hiddenFairBitHeader w publication.certificate.program ++
+  "Step/draw bounds: " ++ toString publication.stepBoundName ++ " / " ++
+    toString publication.drawBoundName ++ "\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings
+
 /-- Random-relative reports cannot be confused with a concrete randomized certificate. -/
-def RandomRelativePublication.summary {w : Nat} {signature : DependencySignature w}
+def HighProbabilityBoundedSuccessRelativePublication.summary
+    {w : Nat} {signature : DependencySignature w}
     {problem : StructuredProblem w} {stepBound drawBound : problem.Input → Nat}
     {failure : problem.Input → Probability}
-    (publication : RandomRelativePublication signature problem stepBound drawBound failure) :
-    String :=
+    (publication : HighProbabilityBoundedSuccessRelativePublication signature problem stepBound
+      drawBound failure) : String :=
   "RELATIVE RANDOMIZED ALGORITHM CERTIFICATE\n" ++
   "THIS IS NOT YET AN UNCONDITIONAL WORD-RAM ALGORITHM\n" ++
   "Certificate: " ++ toString publication.certificateName ++ "\n" ++
   "Problem: " ++ toString publication.problemName ++ "\n" ++
   "Word width: " ++ toString w ++ "\n" ++
   "Randomness: hidden lengthless iid fair-bit source\n" ++
+  "Guarantee: high-probability bounded success; timeout/divergence count as failure\n" ++
   "Random-source cursor across calls: preserved and unobservable\n" ++
   "Dependency operations: " ++ toString (Fintype.card signature.Op) ++ " unresolved\n" ++
   "Concrete discharge: automatic shared-body same-source linker after certified implementations\n" ++
@@ -295,15 +667,29 @@ def RandomRelativePublication.summary {w : Nat} {signature : DependencySignature
   "Failure probability: " ++ toString publication.failureName ++ " (typed ≤ 1)\n" ++
   "Correctness theorem: " ++ toString publication.correctnessTheorem
 
+def BoundedTimeMonteCarloRelativePublication.summary
+    {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
+    {stepBound drawBound : problem.Input → Nat} {failure : problem.Input → Probability}
+    (publication : BoundedTimeMonteCarloRelativePublication signature problem stepBound drawBound
+      failure) : String :=
+  "RELATIVE BOUNDED-TIME MONTE CARLO CERTIFICATE\n" ++
+  "THIS IS NOT YET AN UNCONDITIONAL WORD-RAM ALGORITHM\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.boundedTimeMonteCarlo.summary ++ "\n" ++
+  "Source: hidden iid fair bits; visible length: none\n" ++
+  "Dependencies unresolved: " ++ toString (Fintype.card signature.Op) ++ "\n" ++
+  "Every-source termination is part of the relative certificate\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem
+
 /-- Linked randomized audits expose the generated finite syntax and derived call overhead. -/
-noncomputable def RandomLinkedPublication.summary
+noncomputable def HighProbabilityBoundedSuccessLinkedPublication.summary
     {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
     {stepBound drawBound overheadBound : problem.Input → Nat}
     {failure : problem.Input → Probability}
-    (publication : RandomLinkedPublication signature problem stepBound drawBound overheadBound
-      failure) : String :=
+    (publication : HighProbabilityBoundedSuccessLinkedPublication signature problem stepBound
+      drawBound overheadBound failure) : String :=
   let certificate := publication.certificate
-  "Claim kind: concrete linked randomized fixed-width Word-RAM algorithm\n" ++
+  "Claim kind: concrete linked high-probability bounded-success Word-RAM algorithm\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.highProbabilityBoundedSuccess.summary ++ "\n" ++
   "Linked status: fully resolved, unconditional\n" ++
   "Certificate: " ++ toString publication.certificateName ++ "\n" ++
   "Problem: " ++ toString publication.problemName ++ "\n" ++
@@ -324,6 +710,27 @@ noncomputable def RandomLinkedPublication.summary
   "Correctness theorem: " ++ toString publication.correctnessTheorem ++ "\n" ++
   "Warnings: " ++ stringList publication.warnings ++ "\n" ++
   "Axioms: run `#print axioms " ++ toString publication.correctnessTheorem ++ "`"
+
+noncomputable def BoundedTimeMonteCarloLinkedPublication.summary
+    {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
+    {stepBound drawBound overheadBound : problem.Input → Nat}
+    {failure : problem.Input → Probability}
+    (publication : BoundedTimeMonteCarloLinkedPublication signature problem stepBound drawBound
+      overheadBound failure) : String :=
+  let certificate := publication.certificate
+  "Claim kind: fully linked bounded-time Monte Carlo Word-RAM algorithm\n" ++
+  "Linked status: fully resolved, unconditional\n" ++
+  Algolean.Algorithms.Audit.RandomGuaranteeAudit.boundedTimeMonteCarlo.summary ++ "\n" ++
+  "Source: hidden iid fair bits; same source/cursor preserved across calls\n" ++
+  "Dependency operations: " ++ toString (Fintype.card signature.Op) ++ " resolved\n" ++
+  "Full callee execution: yes; one shared body per operation\n" ++
+  "Link overhead: derived from emitted setup/dispatcher/cleanup syntax\n" ++
+  "Program instruction/description size: " ++ toString certificate.program.length ++ " / " ++
+    toString certificate.program.descriptionSize ++ " bits\n" ++
+  "Step bound: " ++ toString publication.stepBoundName ++ " plus " ++
+    toString publication.overheadBoundName ++ "\n" ++
+  "Draw bound unchanged: " ++ toString publication.drawBoundName ++ "\n" ++
+  "Correctness theorem: " ++ toString publication.correctnessTheorem
 
 /-- Relative audits are deliberately prominent and cannot masquerade as linked certificates. -/
 def RelativePublication.summary {w : ℕ} {signature : DependencySignature w}
@@ -439,6 +846,8 @@ end Algolean.Algorithms.WordRAM.Audit
 
 namespace Algolean.Algorithms.Audit
 
+open MeasureTheory
+
 instance {problem : WordRAM.StructuredProblem w} {bound : problem.Input → ℕ} :
     AuditablePublication (WordRAM.Audit.FixedWidthPublication problem bound) :=
   ⟨WordRAM.Audit.FixedWidthPublication.summary⟩
@@ -447,26 +856,104 @@ instance {family : WordRAM.UniformStructuredProblem} {bound : WordRAM.UniformBou
     AuditablePublication (WordRAM.Audit.UniformPublication family bound) :=
   ⟨WordRAM.Audit.UniformPublication.summary⟩
 
+noncomputable instance {library : WordRAM.PreprocessedWordOperationLibrary w} :
+    AuditablePublication (WordRAM.Audit.DerivedOperationLibraryPublication library) :=
+  ⟨WordRAM.Audit.DerivedOperationLibraryPublication.summary⟩
+
 instance {problem : WordRAM.StructuredProblem w}
     {stepBound drawBound : problem.Input → Nat} {failure : problem.Input → WordRAM.Probability} :
     AuditablePublication
-      (WordRAM.Audit.RandomizedPublication problem stepBound drawBound failure) :=
-  ⟨WordRAM.Audit.RandomizedPublication.summary⟩
+      (WordRAM.Audit.HighProbabilityBoundedSuccessPublication problem stepBound drawBound
+        failure) :=
+  ⟨WordRAM.Audit.HighProbabilityBoundedSuccessPublication.summary⟩
+
+instance {problem : WordRAM.StructuredProblem w}
+    {stepBound drawBound : problem.Input → Nat} {failure : problem.Input → WordRAM.Probability} :
+    AuditablePublication
+      (WordRAM.Audit.BoundedTimeMonteCarloPublication problem stepBound drawBound failure) :=
+  ⟨WordRAM.Audit.BoundedTimeMonteCarloPublication.summary⟩
+
+instance {problem : WordRAM.StructuredProblem w}
+    {specification : WordRAM.StructuredProblem.OneSidedDecisionSpec problem}
+    {stepBound drawBound : problem.Input → Nat} {failure : problem.Input → WordRAM.Probability} :
+    AuditablePublication
+      (WordRAM.Audit.OneSidedBoundedTimeMonteCarloPublication problem specification
+        stepBound drawBound failure) :=
+  ⟨WordRAM.Audit.OneSidedBoundedTimeMonteCarloPublication.summary⟩
+
+instance {problem : WordRAM.StructuredProblem w}
+    {specification : WordRAM.StructuredProblem.OneSidedDecisionSpec problem}
+    {stepBound drawBound : problem.Input → Nat} {failure : problem.Input → WordRAM.Probability} :
+    AuditablePublication
+      (WordRAM.Audit.CoOneSidedBoundedTimeMonteCarloPublication problem specification
+        stepBound drawBound failure) :=
+  ⟨WordRAM.Audit.CoOneSidedBoundedTimeMonteCarloPublication.summary⟩
+
+instance {problem : WordRAM.StructuredProblem w} :
+    AuditablePublication (WordRAM.Audit.AlmostSureLasVegasPublication problem) :=
+  ⟨WordRAM.Audit.AlmostSureLasVegasPublication.summary⟩
+
+instance {problem : WordRAM.StructuredProblem w}
+    {expectedStepBound : problem.Input → ENNReal} :
+    AuditablePublication
+      (WordRAM.Audit.LasVegasExpectedTimePublication problem expectedStepBound) :=
+  ⟨WordRAM.Audit.LasVegasExpectedTimePublication.summary⟩
+
+instance {problem : WordRAM.StructuredProblem w}
+    {stepBound drawBound : problem.Input → Nat} {timeout : problem.Input → WordRAM.Probability} :
+    AuditablePublication
+      (WordRAM.Audit.LasVegasHighProbabilityTimePublication problem stepBound drawBound timeout) :=
+  ⟨WordRAM.Audit.LasVegasHighProbabilityTimePublication.summary⟩
+
+instance {problem : WordRAM.StructuredProblem w}
+    {loss : problem.Input → problem.Output → ENNReal}
+    {expectedLossBound : problem.Input → ENNReal} :
+    AuditablePublication
+      (WordRAM.Audit.ExpectedApproximationPublication problem loss expectedLossBound) :=
+  ⟨WordRAM.Audit.ExpectedApproximationPublication.summary⟩
+
+instance {problem : WordRAM.StructuredProblem w} [MeasurableSpace problem.Output]
+    {target : problem.Input → Measure problem.Output} :
+    AuditablePublication (WordRAM.Audit.SamplerPublication problem target) :=
+  ⟨WordRAM.Audit.SamplerPublication.summary⟩
+
+instance {problem : WordRAM.StructuredProblem w}
+    {stepBound drawBound : problem.Input → Nat} :
+    AuditablePublication
+      (WordRAM.Audit.EverySourceLasVegasPublication problem stepBound drawBound) :=
+  ⟨WordRAM.Audit.EverySourceLasVegasPublication.summary⟩
 
 instance {signature : WordRAM.DependencySignature w} {problem : WordRAM.StructuredProblem w}
     {stepBound drawBound : problem.Input → Nat} {failure : problem.Input → WordRAM.Probability} :
     AuditablePublication
-      (WordRAM.Audit.RandomRelativePublication signature problem stepBound drawBound failure) :=
-  ⟨WordRAM.Audit.RandomRelativePublication.summary⟩
+      (WordRAM.Audit.HighProbabilityBoundedSuccessRelativePublication signature problem
+        stepBound drawBound failure) :=
+  ⟨WordRAM.Audit.HighProbabilityBoundedSuccessRelativePublication.summary⟩
+
+instance {signature : WordRAM.DependencySignature w} {problem : WordRAM.StructuredProblem w}
+    {stepBound drawBound : problem.Input → Nat} {failure : problem.Input → WordRAM.Probability} :
+    AuditablePublication
+      (WordRAM.Audit.BoundedTimeMonteCarloRelativePublication signature problem stepBound drawBound
+        failure) :=
+  ⟨WordRAM.Audit.BoundedTimeMonteCarloRelativePublication.summary⟩
 
 noncomputable instance {signature : WordRAM.DependencySignature w}
     {problem : WordRAM.StructuredProblem w}
     {stepBound drawBound overheadBound : problem.Input → Nat}
     {failure : problem.Input → WordRAM.Probability} :
     AuditablePublication
-      (WordRAM.Audit.RandomLinkedPublication signature problem stepBound drawBound overheadBound
-        failure) :=
-  ⟨WordRAM.Audit.RandomLinkedPublication.summary⟩
+      (WordRAM.Audit.HighProbabilityBoundedSuccessLinkedPublication signature problem stepBound
+        drawBound overheadBound failure) :=
+  ⟨WordRAM.Audit.HighProbabilityBoundedSuccessLinkedPublication.summary⟩
+
+noncomputable instance {signature : WordRAM.DependencySignature w}
+    {problem : WordRAM.StructuredProblem w}
+    {stepBound drawBound overheadBound : problem.Input → Nat}
+    {failure : problem.Input → WordRAM.Probability} :
+    AuditablePublication
+      (WordRAM.Audit.BoundedTimeMonteCarloLinkedPublication signature problem stepBound drawBound
+        overheadBound failure) :=
+  ⟨WordRAM.Audit.BoundedTimeMonteCarloLinkedPublication.summary⟩
 
 noncomputable instance {signature : WordRAM.DependencySignature w}
     {problem : WordRAM.StructuredProblem w}

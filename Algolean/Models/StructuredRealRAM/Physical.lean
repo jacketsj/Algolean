@@ -36,6 +36,15 @@ def EveryStoredEdgeSatisfies (graph : DirectedEdgeList edgeData)
       graph.tail[index]? = some tail ∧ graph.head[index]? = some head ∧
       graph.data[index]? = some datum ∧ edge tail head datum
 
+/-- Exact directed adjacency, including completeness of the materialized edge list. -/
+def RepresentsExactly (graph : DirectedEdgeList edgeData)
+    (adjacent : Nat → Nat → Prop) : Prop :=
+  (∀ index, index < graph.data.size →
+    adjacent graph.tail[index]! graph.head[index]!) ∧
+  (∀ tail head, adjacent tail head →
+    ∃ index, index < graph.data.size ∧ graph.tail[index]! = tail ∧
+      graph.head[index]! = head)
+
 end DirectedEdgeList
 
 namespace UndirectedDartList
@@ -77,6 +86,16 @@ def EveryStoredEdgeSatisfies (graph : CSRGraph edgeData)
       ∃ destination datum,
         graph.destination[index]? = some destination ∧
         graph.data[index]? = some datum ∧ edge vertex destination datum
+
+/-- Exact directed adjacency represented by all and only the materialized CSR entries. -/
+def RepresentsExactly (graph : CSRGraph edgeData)
+    (adjacent : Nat → Nat → Prop) : Prop :=
+  (∀ vertex, vertex < graph.vertexCount →
+    ∀ index, graph.neighborStart vertex ≤ index → index < graph.neighborEnd vertex →
+      adjacent vertex graph.destination[index]!) ∧
+  (∀ tail head, adjacent tail head → tail < graph.vertexCount ∧
+    ∃ index, graph.neighborStart tail ≤ index ∧ index < graph.neighborEnd tail ∧
+      graph.destination[index]! = head)
 
 end CSRGraph
 

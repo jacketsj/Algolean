@@ -9,6 +9,7 @@ module
 public import Algolean.Audit.StructuredRealRAM
 public meta import Algolean.Audit.StructuredRealRAM
 public import Algolean.Complexity.Basic
+public import Algolean.Models.StructuredRealRAM.Physical
 
 /-! # Semantic regressions for the two-bank structured exact-real/natural RAM -/
 
@@ -146,8 +147,8 @@ def contract : ProcedureContract :=
 end ProcedureKinds
 
 /- Exact continuous-randomness certificates cannot omit success-event measurability. -/
-#check UniformRealRandomizedMachineProblem.MonteCarloAlgorithmCertificate.measurableSuccess
-#check BitRandomizedMachineProblem.MonteCarloAlgorithmCertificate.measurableSuccess
+#check UniformRealRandomizedMachineProblem.BoundedTimeMonteCarloAlgorithmCertificate.measurableSuccess
+#check BitRandomizedMachineProblem.BoundedTimeMonteCarloAlgorithmCertificate.measurableSuccess
 
 namespace ContinuousMeasurability
 
@@ -192,7 +193,7 @@ theorem successEvent_eq_univ :
     Set.mem_univ, iff_true]
   exact succeeds source
 
-def certificate : problem.MonteCarloAlgorithmCertificate bound failure where
+def certificate : problem.BoundedTimeMonteCarloAlgorithmCertificate bound failure where
   program := program
   valid := by
     intro pc instruction fetch target member
@@ -217,7 +218,8 @@ def certificate : problem.MonteCarloAlgorithmCertificate bound failure where
       change StructuredRealRAM.UniformReal.sourceLaw Set.univ ≥ 1 - 0
       simp
 
-theorem exists_algorithm : problem.HasMonteCarloAlgorithm bound failure := ⟨certificate⟩
+theorem exists_algorithm : problem.HasBoundedTimeMonteCarloAlgorithm bound failure :=
+  ⟨certificate⟩
 
 end ContinuousMeasurability
 
@@ -229,6 +231,120 @@ end ContinuousMeasurability
 #machine_profile_audit Audit.coreProfileAudit
 #machine_profile_audit Audit.randomBitProfileAudit
 #machine_profile_audit Audit.uniformRealProfileAudit
+
+namespace ArithmeticProfiles
+
+def squareRootInstruction :
+    ArithmeticInstruction AlgebraicSqrtExactRealNatRAM :=
+  .unary .sqrt (by simp [ArithmeticProfile.AllowsUnary]) (.literal 4) 0 1
+
+/-- The algebraic core excludes square root as a kernel-reduced proposition. -/
+example : ¬ ArithmeticProfile.algebraic.AllowsUnary .sqrt := by
+  simp [ArithmeticProfile.AllowsUnary]
+
+/-- Square root is admitted only after selecting the named square-root profile. -/
+example : AlgebraicSqrtExactRealNatRAM.AllowsUnary .sqrt := by
+  simp [ArithmeticProfile.AllowsUnary]
+
+/-- Floor is absent from the algebraic profile and present in the separately named profile. -/
+example : ¬ AlgebraicExactRealNatRAM.AllowsFloorToNat ∧
+    FloorExactRealNatRAM.AllowsFloorToNat := by
+  simp [ArithmeticProfile.AllowsFloorToNat]
+
+/-- Optional primitive charges occupy their own resource coordinate. -/
+example : squareRootInstruction.cost.count (.unary .sqrt) = 1 := by
+  simp [squareRootInstruction, ArithmeticInstruction.cost, ArithmeticCost.count,
+    ArithmeticCost.ofPrimitive]
+
+/-- Three emitted square-root instructions contribute exactly three square-root charges. -/
+def rootZero (next : Nat) : ArithmeticInstruction AlgebraicSqrtExactRealNatRAM :=
+  .unary .sqrt (by simp [ArithmeticProfile.AllowsUnary]) (.literal 0) 0 next
+
+def haltZero : Instruction := .halt (.literal 0)
+
+def threeRootProgram : ArithmeticProgram AlgebraicSqrtExactRealNatRAM :=
+  [rootZero 1, rootZero 2, rootZero 3, .core haltZero]
+
+theorem writeZero_empty : Memory.empty.writeReal 0 0 = Memory.empty := by
+  unfold Memory.writeReal Memory.empty
+  congr
+  funext address
+  simp
+
+/-- Three roots really execute in one same-trace derivation, rather than merely being summed. -/
+noncomputable def threeRootTrace :
+    ArithmeticHaltingTrace threeRootProgram ⟨0, Memory.empty⟩ Memory.empty 0
+      ((rootZero 1).cost + ((rootZero 2).cost +
+        ((rootZero 3).cost + ArithmeticCost.ofCore haltZero.cost))) 4 := by
+  apply ArithmeticHaltingTrace.next (nextConfiguration := ⟨1, Memory.empty⟩)
+  · simp [arithmeticStep, threeRootProgram, rootZero, executeArithmetic,
+      RealUnaryPrimitive.eval, RealOperand.eval, writeZero_empty]
+  · apply ArithmeticHaltingTrace.next (nextConfiguration := ⟨2, Memory.empty⟩)
+    · simp [arithmeticStep, threeRootProgram, rootZero, executeArithmetic,
+        RealUnaryPrimitive.eval, RealOperand.eval, writeZero_empty]
+    · apply ArithmeticHaltingTrace.next (nextConfiguration := ⟨3, Memory.empty⟩)
+      · simp [arithmeticStep, threeRootProgram, rootZero, executeArithmetic,
+          RealUnaryPrimitive.eval, RealOperand.eval, writeZero_empty]
+      · apply ArithmeticHaltingTrace.halt
+        simp [arithmeticStep, threeRootProgram, haltZero, executeArithmetic, execute,
+          RealOperand.eval]
+
+/-- The operation-sensitive coordinate of the actual trace is exactly three. -/
+example :
+    let charge := (rootZero 1).cost + ((rootZero 2).cost +
+      ((rootZero 3).cost + ArithmeticCost.ofCore haltZero.cost))
+    charge.count (.unary .sqrt) = 3 := by
+  change (if RealPrimitive.unary .sqrt = RealPrimitive.unary .sqrt then 1 else 0) +
+    ((if RealPrimitive.unary .sqrt = RealPrimitive.unary .sqrt then 1 else 0) +
+      ((if RealPrimitive.unary .sqrt = RealPrimitive.unary .sqrt then 1 else 0) + 0)) = 3
+  decide
+
+/-- The closed core embedding works for every selected arithmetic profile. -/
+example (program : Program) (valid : program.Valid) :
+    ArithmeticProgram.Valid
+      (liftCoreArithmetic (profile := AlgebraicSqrtExactRealNatRAM) program) :=
+  liftCoreArithmetic_valid program valid
+
+#arithmetic_profile_audit AlgebraicExactRealNatRAM
+#arithmetic_profile_audit AlgebraicSqrtExactRealNatRAM
+#arithmetic_profile_audit TrigExactRealNatRAM
+
+end ArithmeticProfiles
+
+namespace ExactGraphRelations
+
+def edgeListPayload : Nat × Array Nat × Array Nat × Array Unit :=
+  (3, #[0], #[1], #[()])
+
+def edgeList : DirectedEdgeList Unit :=
+  Tagged.mk ⟨edgeListPayload, by
+    simp [edgeListPayload, DirectedEdgeList.Valid]⟩
+
+def intendedAdjacency (tail head : Nat) : Prop :=
+  (tail = 0 ∧ head = 1) ∨ (tail = 1 ∧ head = 2)
+
+/-- The one stored edge is semantically valid. -/
+theorem everyStoredEdge : DirectedEdgeList.EveryStoredEdgeSatisfies edgeList
+    (fun tail head _ ↦ intendedAdjacency tail head) := by
+  intro index indexInRange
+  have indexZero : index = 0 := by
+    change index < 1 at indexInRange
+    omega
+  subst index
+  exact ⟨0, 1, (), by decide, by decide, by decide, Or.inl ⟨rfl, rfl⟩⟩
+
+/-- Exact representation rejects the omitted mathematical edge `(1,2)`. -/
+theorem notExact : ¬ DirectedEdgeList.RepresentsExactly edgeList intendedAdjacency := by
+  intro exact
+  rcases exact.2 1 2 (Or.inr ⟨rfl, rfl⟩) with ⟨index, inRange, tail, head⟩
+  have indexZero : index = 0 := by
+    change index < 1 at inRange
+    omega
+  subst index
+  norm_num [edgeList, edgeListPayload, DirectedEdgeList.tail,
+    DirectedEdgeList.payload] at tail
+
+end ExactGraphRelations
 
 #check Linker.link
 #check Linker.link_length

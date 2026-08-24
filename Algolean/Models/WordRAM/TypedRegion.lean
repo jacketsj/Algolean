@@ -7,6 +7,7 @@ Authors: Algolean contributors
 module
 
 public import Algolean.Models.WordRAM.Data.Physical
+public import Algolean.Models.WordRAM.Data.IndexedArray
 
 /-!
 # Typed Word-RAM regions and first-order address plans
@@ -839,6 +840,290 @@ theorem _preservesFrame (accessor : CertifiedAccessor w)
     memory next executes
 
 end CertifiedAccessor
+
+/-- A finite nonhalting execution segment, suitable for composition inside a larger program. -/
+inductive RunningSegment (program : Program w) :
+    Configuration w → Configuration w → Nat → Nat → Prop where
+  | one {initial final cost}
+      (step : stepCosted program initial = ⟨.running final, cost⟩) :
+      RunningSegment program initial final cost 1
+  | next {initial middle final headCost tailCost tailSteps}
+      (step : stepCosted program initial = ⟨.running middle, headCost⟩)
+      (tail : RunningSegment program middle final tailCost tailSteps) :
+      RunningSegment program initial final (headCost + tailCost) (tailSteps + 1)
+
+namespace RunningSegment
+
+/-- Concatenate relocated accessor segments without hiding any transition or charge. -/
+theorem trans
+    (first : RunningSegment program initial middle firstCost firstSteps)
+    (second : RunningSegment program middle final secondCost secondSteps) :
+    RunningSegment program initial final (firstCost + secondCost)
+      (secondSteps + firstSteps) := by
+  induction first generalizing final secondCost secondSteps with
+  | one step => simpa [Nat.add_comm] using RunningSegment.next step second
+  | next step tail induction =>
+      have combined := RunningSegment.next step (induction second)
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using combined
+
+/-- Prefix an ordinary halting trace by a composable running segment. -/
+theorem thenHalting
+    (runningPrefix : RunningSegment program initial middle prefixCost prefixSteps)
+    (tail : RAM.HaltingTrace (stepCosted program) middle final result tailCost tailSteps) :
+    RAM.HaltingTrace (stepCosted program) initial final result
+      (prefixCost + tailCost) (tailSteps + prefixSteps) := by
+  induction runningPrefix generalizing final tailCost tailSteps with
+  | one step => simpa [Nat.add_comm] using RAM.HaltingTrace.next step tail
+  | next step rest induction =>
+      have combined := RAM.HaltingTrace.next step (induction tail)
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using combined
+
+end RunningSegment
+
+namespace AddressPlan
+
+/--
+Relocated two-step refinement of a fixed-index accessor inside any enclosing program.  The caller
+supplies only the two fetch equalities established by its assembler; no halt or address-zero
+assumption is introduced.
+-/
+theorem fixedIndex_segment (program : Program w) (memory : Memory w) (base : BitVec w)
+    (headerWords stride indexRegister destination start next : Nat)
+    (firstFetch : program[start]? = some
+      (.extra (.mulAddress (.reg indexRegister) (.immediate (BitVec.ofNat w stride))
+        destination) (start + 1)))
+    (secondFetch : program[start + 1]? = some
+      (.addAddress (.reg destination)
+        (.immediate (BitVec.ofNat w (base.toNat + headerWords))) destination next)) :
+    let final := (memory.writeAddress destination
+      (memory.address indexRegister * BitVec.ofNat w stride)).writeAddress destination
+        (memory.address indexRegister * BitVec.ofNat w stride +
+          BitVec.ofNat w (base.toNat + headerWords))
+    RunningSegment program ⟨start, memory⟩ ⟨next, final⟩ 2 2 ∧
+      final.data = memory.data := by
+  dsimp
+  let middle := memory.writeAddress destination
+    (memory.address indexRegister * BitVec.ofNat w stride)
+  apply And.intro
+  · have firstStep : stepCosted program ⟨start, memory⟩ =
+        ⟨.running ⟨start + 1, middle⟩, 1⟩ := by
+      simp [stepCosted, costedSemantics, RAM.CostedSemantics.step, firstFetch,
+        RAM.CostedSemantics.unit, RAM.execute, WordRAM.evalExtra, RAM.AddressOperand.eval,
+        middle, RAM.Memory.writeAddress]
+    have secondStep : stepCosted program ⟨start + 1, middle⟩ =
+        ⟨.running ⟨next, (middle.writeAddress destination
+          (memory.address indexRegister * BitVec.ofNat w stride +
+            BitVec.ofNat w (base.toNat + headerWords)))⟩, 1⟩ := by
+      simp [stepCosted, costedSemantics, RAM.CostedSemantics.step, secondFetch,
+        RAM.CostedSemantics.unit, RAM.execute, WordRAM.ops, RAM.AddressOperand.eval,
+        middle, RAM.Memory.writeAddress]
+    simpa [middle] using RunningSegment.next firstStep (RunningSegment.one secondStep)
+  · rfl
+
+end AddressPlan
+
+/-- A typed view of the canonical cached-boundary variable-footprint array format. -/
+structure IndexedArrayRef (w : Nat) (alpha : Type) where
+  elementLayout : WordLayout w alpha
+  base : BitVec w
+
+namespace IndexedArrayRef
+
+/-- Canonical child address obtained from the cached boundary selected by `index`. -/
+def elementRegion [Inhabited alpha] (reference : IndexedArrayRef w alpha)
+    (payload : WordArray w (BitVec w) × WordArray w alpha) (index : Nat) : Region w :=
+  ⟨BitVec.ofNat w (reference.base.toNat + 2) + BitVec.ofNat w payload.1.size +
+    payload.1.data.getD index 0⟩
+
+/--
+Closed runtime lookup.  The code reads the offset-table length and selected boundary from memory;
+there is no caller-supplied footprint function and no host-language lookup step.
+-/
+def getProgram (reference : IndexedArrayRef w alpha)
+    (indexRegister countRegister payloadBaseRegister boundaryAddressRegister
+      offsetRegister destinationRegister : Nat) : Program w :=
+  [.extra (.valueToAddress (.load (.immediate reference.base)) countRegister) 1,
+    .addAddress (.reg countRegister)
+      (.immediate (BitVec.ofNat w (reference.base.toNat + 2))) payloadBaseRegister 2,
+    .setAddress (.reg indexRegister) boundaryAddressRegister 3,
+    .addAddress (.reg boundaryAddressRegister)
+      (.immediate (BitVec.ofNat w (reference.base.toNat + 1))) boundaryAddressRegister 4,
+    .extra (.valueToAddress (.load (.reg boundaryAddressRegister)) offsetRegister) 5,
+    .addAddress (.reg payloadBaseRegister) (.reg offsetRegister) destinationRegister 6,
+    .halt (.immediate 0)]
+
+/-- The runtime lookup has an exact seven-transition same-trace execution. -/
+theorem getProgram_trace (reference : IndexedArrayRef w alpha) (memory : Memory w)
+    (indexRegister countRegister payloadBaseRegister boundaryAddressRegister
+      offsetRegister destinationRegister : Nat)
+    (registersDistinct : [indexRegister, countRegister, payloadBaseRegister,
+      boundaryAddressRegister, offsetRegister, destinationRegister].Nodup) :
+    let index := memory.address indexRegister
+    let count := memory.data reference.base
+    let payloadBase := BitVec.ofNat w (reference.base.toNat + 2) + count
+    let boundaryAddress := BitVec.ofNat w (reference.base.toNat + 1) + index
+    let offset := memory.data boundaryAddress
+    let destination := payloadBase + offset
+    ∃ final,
+      RAM.HaltingTrace (stepCosted (reference.getProgram indexRegister countRegister
+        payloadBaseRegister boundaryAddressRegister offsetRegister destinationRegister))
+        ⟨0, memory⟩ final 0 7 7 ∧
+      final.data = memory.data ∧ final.address destinationRegister = destination := by
+  dsimp
+  have distinct := registersDistinct
+  simp only [List.nodup_cons, List.mem_cons, List.mem_singleton, not_or,
+    not_false_eq_true] at distinct
+  let afterCount := memory.writeAddress countRegister (memory.data reference.base)
+  let afterPayloadBase := afterCount.writeAddress payloadBaseRegister
+    (memory.data reference.base + BitVec.ofNat w (reference.base.toNat + 2))
+  let afterIndex := afterPayloadBase.writeAddress boundaryAddressRegister
+    (memory.address indexRegister)
+  let afterBoundary := afterIndex.writeAddress boundaryAddressRegister
+    (memory.address indexRegister + BitVec.ofNat w (reference.base.toNat + 1))
+  let afterOffset := afterBoundary.writeAddress offsetRegister
+    (memory.data (memory.address indexRegister +
+      BitVec.ofNat w (reference.base.toNat + 1)))
+  let finalMemory := afterOffset.writeAddress destinationRegister
+    ((memory.data reference.base + BitVec.ofNat w (reference.base.toNat + 2)) +
+      memory.data (memory.address indexRegister +
+        BitVec.ofNat w (reference.base.toNat + 1)))
+  refine ⟨finalMemory, ?_, rfl, ?_⟩
+  · have haltTrace : RAM.HaltingTrace
+        (stepCosted (reference.getProgram indexRegister countRegister payloadBaseRegister
+          boundaryAddressRegister offsetRegister destinationRegister))
+        ⟨6, finalMemory⟩ finalMemory 0 1 1 :=
+      .halt (by simp [getProgram, stepCosted, costedSemantics, RAM.CostedSemantics.step,
+        RAM.CostedSemantics.unit, RAM.execute, RAM.Operand.eval, WordRAM.ops])
+    have destinationTrace : RAM.HaltingTrace
+        (stepCosted (reference.getProgram indexRegister countRegister payloadBaseRegister
+          boundaryAddressRegister offsetRegister destinationRegister))
+        ⟨5, afterOffset⟩ finalMemory 0 2 2 :=
+      .next (by simp [getProgram, stepCosted, costedSemantics, RAM.CostedSemantics.step,
+        RAM.CostedSemantics.unit, RAM.execute, WordRAM.ops, RAM.AddressOperand.eval,
+        finalMemory, afterOffset, afterBoundary, afterIndex, afterPayloadBase, afterCount,
+        RAM.Memory.writeAddress, distinct, add_comm]) haltTrace
+    have offsetTrace : RAM.HaltingTrace
+        (stepCosted (reference.getProgram indexRegister countRegister payloadBaseRegister
+          boundaryAddressRegister offsetRegister destinationRegister))
+        ⟨4, afterBoundary⟩ finalMemory 0 3 3 :=
+      .next (by simp [getProgram, stepCosted, costedSemantics, RAM.CostedSemantics.step,
+        RAM.CostedSemantics.unit, RAM.execute, WordRAM.evalExtra, WordRAM.ops,
+        RAM.Operand.eval, RAM.AddressOperand.eval, afterOffset, afterBoundary, afterIndex,
+        afterPayloadBase, afterCount, RAM.Memory.writeAddress, distinct,
+        add_comm]) destinationTrace
+    have boundaryTrace : RAM.HaltingTrace
+        (stepCosted (reference.getProgram indexRegister countRegister payloadBaseRegister
+          boundaryAddressRegister offsetRegister destinationRegister))
+        ⟨3, afterIndex⟩ finalMemory 0 4 4 :=
+      .next (by simp [getProgram, stepCosted, costedSemantics, RAM.CostedSemantics.step,
+        RAM.CostedSemantics.unit, RAM.execute, WordRAM.ops, RAM.AddressOperand.eval,
+        afterBoundary, afterIndex, afterPayloadBase, afterCount, RAM.Memory.writeAddress,
+        distinct, add_comm]) offsetTrace
+    have indexTrace : RAM.HaltingTrace
+        (stepCosted (reference.getProgram indexRegister countRegister payloadBaseRegister
+          boundaryAddressRegister offsetRegister destinationRegister))
+        ⟨2, afterPayloadBase⟩ finalMemory 0 5 5 :=
+      .next (by simp [getProgram, stepCosted, costedSemantics, RAM.CostedSemantics.step,
+        RAM.CostedSemantics.unit, RAM.execute, WordRAM.ops, RAM.AddressOperand.eval,
+        afterIndex, afterPayloadBase, afterCount, RAM.Memory.writeAddress,
+        distinct]) boundaryTrace
+    have payloadTrace : RAM.HaltingTrace
+        (stepCosted (reference.getProgram indexRegister countRegister payloadBaseRegister
+          boundaryAddressRegister offsetRegister destinationRegister))
+        ⟨1, afterCount⟩ finalMemory 0 6 6 :=
+      .next (by simp [getProgram, stepCosted, costedSemantics, RAM.CostedSemantics.step,
+        RAM.CostedSemantics.unit, RAM.execute, WordRAM.ops, RAM.AddressOperand.eval,
+        afterPayloadBase, afterCount, RAM.Memory.writeAddress, distinct,
+        add_comm]) indexTrace
+    exact .next (by simp [getProgram, stepCosted, costedSemantics,
+      RAM.CostedSemantics.step, RAM.CostedSemantics.unit, RAM.execute, WordRAM.evalExtra,
+      WordRAM.ops, RAM.Operand.eval, RAM.AddressOperand.eval, afterCount,
+      RAM.Memory.writeAddress, distinct]) payloadTrace
+  · simp [finalMemory, afterOffset, afterBoundary, afterIndex, afterPayloadBase, afterCount,
+      RAM.Memory.writeAddress, distinct]
+    ac_rfl
+
+/--
+End-to-end indexed lookup: the count and boundary read by the seven-step trace are forced by the
+closed indexed-array representation, so the final address is the canonical selected child region.
+-/
+theorem getProgram_trace_canonical [Inhabited alpha]
+    (reference : IndexedArrayRef w alpha)
+    (payload : WordArray w (BitVec w) × WordArray w alpha)
+    (valid : IndexedArray.Valid reference.elementLayout payload)
+    (memory : Memory w) (index indexRegister countRegister payloadBaseRegister
+      boundaryAddressRegister offsetRegister destinationRegister : Nat)
+    (indexValue : memory.address indexRegister = BitVec.ofNat w index)
+    (indexInRange : index < payload.2.size)
+    (registersDistinct : [indexRegister, countRegister, payloadBaseRegister,
+      boundaryAddressRegister, offsetRegister, destinationRegister].Nodup)
+    (represented : (indexedArrayLayout reference.elementLayout).RepAt ⟨reference.base⟩
+      (Tagged.mk ⟨payload, valid⟩) memory) :
+    ∃ final,
+      RAM.HaltingTrace (stepCosted (reference.getProgram indexRegister countRegister
+        payloadBaseRegister boundaryAddressRegister offsetRegister destinationRegister))
+        ⟨0, memory⟩ final 0 7 7 ∧
+      final.data = memory.data ∧
+      final.address destinationRegister =
+        (reference.elementRegion payload index).base := by
+  have countIndexInRange : 0 <
+      (indexedArrayLayout reference.elementLayout).footprintWords
+        (Tagged.mk ⟨payload, valid⟩) := by
+    change 0 < ((indexedArrayLayout reference.elementLayout).encode
+      (Tagged.mk ⟨payload, valid⟩)).length
+    rw [indexedArrayLayout_encode]
+    simp
+  have countStored := represented.2 0 countIndexInRange
+  have boundaryIndexInRange : index + 1 <
+      (indexedArrayLayout reference.elementLayout).footprintWords
+        (Tagged.mk ⟨payload, valid⟩) := by
+    have offsetsLarger : index + 1 < payload.1.size + 1 := by
+      rw [valid.1]
+      omega
+    change index + 1 < ((indexedArrayLayout reference.elementLayout).encode
+      (Tagged.mk ⟨payload, valid⟩)).length
+    rw [indexedArrayLayout_encode]
+    simp only [List.length_append, List.length_cons, Array.length_toList]
+    change index + 1 < payload.1.data.size + 1 +
+      ((reference.elementLayout.encodeList payload.2.data.toList).length + 1)
+    have offsetIndexInRange : index < payload.1.data.size := by
+      change index < payload.1.size
+      rw [valid.1]
+      omega
+    omega
+  have boundaryStored := represented.2 (index + 1) boundaryIndexInRange
+  have countEq : memory.data reference.base = BitVec.ofNat w payload.1.size := by
+    simpa [WordLayout.footprintWords, indexedArrayLayout_encode] using countStored
+  have boundaryAddressEq :
+      BitVec.ofNat w (reference.base.toNat + 1) + memory.address indexRegister =
+        BitVec.ofNat w (reference.base.toNat + (index + 1)) := by
+    rw [indexValue]
+    rw [← BitVec.ofNat_add]
+    congr 1
+    omega
+  have boundaryEq :
+      memory.data (BitVec.ofNat w (reference.base.toNat + 1) +
+        memory.address indexRegister) = payload.1.data.getD index 0 := by
+    rw [boundaryAddressEq]
+    have encodedBoundary :
+        ((indexedArrayLayout reference.elementLayout).encode
+          (Tagged.mk ⟨payload, valid⟩))[index + 1] = payload.1.data.getD index 0 := by
+      have offsetIndexInRange : index < payload.1.size := by rw [valid.1]; omega
+      have offsetDataIndexInRange : index < payload.1.data.size := by
+        simpa only [WordArray.size] using offsetIndexInRange
+      simp only [indexedArrayLayout_encode, List.getElem_cons_succ]
+      rw [List.getElem_append_left (by simpa using offsetDataIndexInRange)]
+      simp [Array.getElem_toList, Array.getD_eq_getD_getElem?, Array.getD_getElem?,
+        offsetDataIndexInRange]
+    exact boundaryStored.trans encodedBoundary
+  rcases reference.getProgram_trace memory indexRegister countRegister payloadBaseRegister
+      boundaryAddressRegister offsetRegister destinationRegister registersDistinct with
+    ⟨final, trace, frame, destination⟩
+  refine ⟨final, trace, frame, ?_⟩
+  rw [destination, countEq, boundaryEq]
+  simp only [elementRegion]
+
+end IndexedArrayRef
 
 /-- Minimal closed program exercising data-dependent random access twice. -/
 def indirectLookupProgram (indexAddress pointerBase valueBase : BitVec w)

@@ -570,7 +570,7 @@ structure LinkingAssumptions {w : Nat} {signature : DependencySignature w}
     {problem : StructuredProblem w}
     {relativeStepBound relativeDrawBound : problem.Input → Nat}
     {failure : problem.Input → Probability}
-    (client : RandomRelativeAlgorithmCertificate signature problem
+    (client : HighProbabilityBoundedSuccessRelativeCertificate signature problem
       relativeStepBound relativeDrawBound failure)
     (environment : ImplementationEnvironment signature)
     (configuration : Linker.Configuration w)
@@ -594,7 +594,7 @@ theorem successEvent_mono_of
     {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
     {relativeStepBound relativeDrawBound : problem.Input → Nat}
     {failure : problem.Input → Probability}
-    (client : RandomRelativeAlgorithmCertificate signature problem
+    (client : HighProbabilityBoundedSuccessRelativeCertificate signature problem
       relativeStepBound relativeDrawBound failure)
     (environment : ImplementationEnvironment signature)
     (configuration : Linker.Configuration w) (overheadBound : problem.Input → Nat)
@@ -636,7 +636,7 @@ theorem successEvent_mono
     {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
     {relativeStepBound relativeDrawBound : problem.Input → Nat}
     {failure : problem.Input → Probability}
-    (client : RandomRelativeAlgorithmCertificate signature problem
+    (client : HighProbabilityBoundedSuccessRelativeCertificate signature problem
       relativeStepBound relativeDrawBound failure)
     (environment : ImplementationEnvironment signature)
     (configuration : Linker.Configuration w) (overheadBound : problem.Input → Nat)
@@ -654,12 +654,12 @@ def certificate
     {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
     {relativeStepBound relativeDrawBound : problem.Input → Nat}
     {failure : problem.Input → Probability}
-    (client : RandomRelativeAlgorithmCertificate signature problem
+    (client : HighProbabilityBoundedSuccessRelativeCertificate signature problem
       relativeStepBound relativeDrawBound failure)
     (environment : ImplementationEnvironment signature)
     (configuration : Linker.Configuration w) (overheadBound : problem.Input → Nat)
     (assumptions : LinkingAssumptions client environment configuration overheadBound) :
-    problem.RandomizedAlgorithmCertificate
+    problem.HighProbabilityBoundedSuccessCertificate
       (linkedStepBound relativeStepBound overheadBound) relativeDrawBound failure where
   program := link client.program environment configuration
   valid := link_valid client.program environment configuration client.valid
@@ -674,14 +674,136 @@ theorem hasAlgorithm
     {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
     {relativeStepBound relativeDrawBound : problem.Input → Nat}
     {failure : problem.Input → Probability}
-    (client : RandomRelativeAlgorithmCertificate signature problem
+    (client : HighProbabilityBoundedSuccessRelativeCertificate signature problem
       relativeStepBound relativeDrawBound failure)
     (environment : ImplementationEnvironment signature)
     (configuration : Linker.Configuration w) (overheadBound : problem.Input → Nat)
     (assumptions : LinkingAssumptions client environment configuration overheadBound) :
-    problem.HasRandomizedWordRAMAlgorithm
+    problem.HasHighProbabilityBoundedSuccessAlgorithm
       (linkedStepBound relativeStepBound overheadBound) relativeDrawBound failure :=
   ⟨certificate client environment configuration overheadBound assumptions⟩
+
+/-! ## Every-source-time Monte Carlo linking -/
+
+/-- Linker obligations for the guarantee that separates runtime from correctness probability. -/
+structure BoundedTimeLinkingAssumptions
+    {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
+    {relativeStepBound relativeDrawBound : problem.Input → Nat}
+    {failure : problem.Input → Probability}
+    (client : BoundedTimeMonteCarloRelativeCertificate signature problem
+      relativeStepBound relativeDrawBound failure)
+    (environment : ImplementationEnvironment signature)
+    (configuration : Linker.Configuration w)
+    (overheadBound : problem.Input → Nat) : Prop where
+  compatible : Linker.Compatibility (placement client.program) environment configuration
+  overhead_le : ∀ source input, ∀ validInput : problem.pre input,
+    ∀ final result draws cost calls,
+      RandomOpenHaltingTrace signature environment.responder client.program source
+        (RandomBit.Configuration.initial (problem.initialMemory input validInput))
+        final result draws cost calls →
+      Linker.totalConcreteCallOverhead environment calls ≤ overheadBound input
+  correctMeasurable : ∀ input validInput,
+    MeasurableSet (problem.RandomCorrectEvent
+      (link client.program environment configuration) input validInput)
+
+/-- Every relative bounded run becomes a concrete bounded run on the identical hidden source. -/
+theorem boundedTime_terminatesWithin
+    {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
+    {relativeStepBound relativeDrawBound : problem.Input → Nat}
+    {failure : problem.Input → Probability}
+    (client : BoundedTimeMonteCarloRelativeCertificate signature problem
+      relativeStepBound relativeDrawBound failure)
+    (environment : ImplementationEnvironment signature)
+    (configuration : Linker.Configuration w) (overheadBound : problem.Input → Nat)
+    (assumptions : BoundedTimeLinkingAssumptions client environment configuration overheadBound)
+    (source : RandomBit.Source) (input : problem.Input) (validInput : problem.pre input) :
+    source ∈ problem.RandomTerminationWithinEvent
+      (link client.program environment configuration)
+      (linkedStepBound relativeStepBound overheadBound) relativeDrawBound input validInput := by
+  rcases client.terminatesWithin environment.responder source input validInput with
+    ⟨final, result, draws, cost, calls, output, trace, outputRep, stepBound, drawBound⟩
+  rcases refine_trace client.program environment configuration assumptions.compatible source
+      trace rfl with ⟨linkedCost, linkedTrace, linkedCostBound, linkedDraws⟩
+  let run : problem.RandomSuccessfulRun
+      (link client.program environment configuration) source input validInput := {
+    final := final
+    result := result
+    draws := draws
+    cost := linkedCost
+    trace := {
+      operational := linkedTrace
+      cursorAccounting := linkedTrace.cursorAccounting } }
+  refine ⟨run, output, outputRep, ?_, drawBound⟩
+  have overhead := assumptions.overhead_le source input validInput final result draws cost calls trace
+  change linkedCost.steps ≤ relativeStepBound input + overheadBound input
+  omega
+
+/-- Relative correctness transfers pointwise without merging timeout into the error event. -/
+theorem boundedTime_correctEvent_mono
+    {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
+    {relativeStepBound relativeDrawBound : problem.Input → Nat}
+    {failure : problem.Input → Probability}
+    (client : BoundedTimeMonteCarloRelativeCertificate signature problem
+      relativeStepBound relativeDrawBound failure)
+    (environment : ImplementationEnvironment signature)
+    (configuration : Linker.Configuration w)
+    (compatible : Linker.Compatibility (placement client.program) environment configuration)
+    (input : problem.Input) (validInput : problem.pre input) :
+    RandomRelativeCorrectEvent signature environment.responder problem client.program
+        input validInput ⊆
+      problem.RandomCorrectEvent (link client.program environment configuration)
+        input validInput := by
+  intro source success
+  rcases success with ⟨final, result, draws, cost, calls, output, trace, outputRep, correct⟩
+  rcases refine_trace client.program environment configuration compatible source
+      trace rfl with ⟨linkedCost, linkedTrace, linkedCostBound, linkedDraws⟩
+  let run : problem.RandomSuccessfulRun
+      (link client.program environment configuration) source input validInput := {
+    final := final
+    result := result
+    draws := draws
+    cost := linkedCost
+    trace := {
+      operational := linkedTrace
+      cursorAccounting := linkedTrace.cursorAccounting } }
+  exact ⟨run, output, outputRep, correct⟩
+
+/-- Automatic every-source-time Monte Carlo certificate with unchanged random-draw bound. -/
+def boundedTimeCertificate
+    {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
+    {relativeStepBound relativeDrawBound : problem.Input → Nat}
+    {failure : problem.Input → Probability}
+    (client : BoundedTimeMonteCarloRelativeCertificate signature problem
+      relativeStepBound relativeDrawBound failure)
+    (environment : ImplementationEnvironment signature)
+    (configuration : Linker.Configuration w) (overheadBound : problem.Input → Nat)
+    (assumptions : BoundedTimeLinkingAssumptions client environment configuration overheadBound) :
+    problem.BoundedTimeMonteCarloCertificate
+      (linkedStepBound relativeStepBound overheadBound) relativeDrawBound failure where
+  program := link client.program environment configuration
+  valid := link_valid client.program environment configuration client.valid
+  terminatesWithin := boundedTime_terminatesWithin client environment configuration
+    overheadBound assumptions
+  correctMeasurable := assumptions.correctMeasurable
+  correctProbability input validInput :=
+    (client.correctProbability environment.responder input validInput).trans
+      (measure_mono
+        (boundedTime_correctEvent_mono client environment configuration assumptions.compatible
+          input validInput))
+
+/-- One-line existential discharge preserving every-source-time Monte Carlo semantics. -/
+theorem hasBoundedTimeMonteCarloAlgorithm
+    {w : Nat} {signature : DependencySignature w} {problem : StructuredProblem w}
+    {relativeStepBound relativeDrawBound : problem.Input → Nat}
+    {failure : problem.Input → Probability}
+    (client : BoundedTimeMonteCarloRelativeCertificate signature problem
+      relativeStepBound relativeDrawBound failure)
+    (environment : ImplementationEnvironment signature)
+    (configuration : Linker.Configuration w) (overheadBound : problem.Input → Nat)
+    (assumptions : BoundedTimeLinkingAssumptions client environment configuration overheadBound) :
+    problem.HasBoundedTimeMonteCarloAlgorithm
+      (linkedStepBound relativeStepBound overheadBound) relativeDrawBound failure :=
+  ⟨boundedTimeCertificate client environment configuration overheadBound assumptions⟩
 
 end
 

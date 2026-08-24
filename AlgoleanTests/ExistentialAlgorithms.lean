@@ -263,9 +263,9 @@ error: Unknown identifier `RandomizedMachineProblem`
 
 #check MachineProblem.HasUniformlyGeneratedFamily
 #check MachineProblem.HasFamilyRelativeToGeneratorSpecification
-#check BitRandomizedMachineProblem.HasMonteCarloAlgorithm
+#check BitRandomizedMachineProblem.HasBoundedTimeMonteCarloAlgorithm
 #check BitRandomizedMachineProblem.HasEverySourceLasVegasStepAlgorithm
-#check UniformRealRandomizedMachineProblem.HasMonteCarloAlgorithm
+#check UniformRealRandomizedMachineProblem.HasBoundedTimeMonteCarloAlgorithm
 #check ScheduledBitTapeProblem.HasMonteCarloAlgorithmRelativeToBitCountSchedule
 #check ScheduledBitTapeProblem.HasTotalTapeLasVegasStepAlgorithmRelativeToBitCountSchedule
 #print BitRandomizedMachineProblem
@@ -349,8 +349,8 @@ example : echoOracleInterface.Nonvacuous := ⟨echoOracle⟩
 #print OracleMachineProblem.OracleAlgorithmCertificate
 #check Audit.CompiledAlgorithmPublication
 #check Audit.UniformlyGeneratedFamilyPublication
-#check Audit.MonteCarloAlgorithmPublication
-#check Audit.UniformRealMonteCarloAlgorithmPublication
+#check Audit.BoundedTimeMonteCarloAlgorithmPublication
+#check Audit.UniformRealBoundedTimeMonteCarloAlgorithmPublication
 #check Audit.EverySourceLasVegasAlgorithmPublication
 #check Audit.OracleAlgorithmPublication
 

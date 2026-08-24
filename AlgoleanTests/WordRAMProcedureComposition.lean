@@ -369,6 +369,182 @@ noncomputable def linkedPublication :
 
 end IntegrationModule
 
+namespace RuntimeLoopRegression
+
+open ContractModule RelativeClientModule DependencyImplementationModule IntegrationModule
+
+/-- One syntactic call site on a genuine backward machine edge. -/
+def loopClient : OpenProgram signature := [
+  .core (.set (.immediate 2) (.immediate 2) 1),
+  .call () ⟨0⟩ ⟨0⟩ 2,
+  .core (.sub (.load (.immediate 2)) (.immediate 1) (.immediate 2) 3),
+  .core (.compare (.load (.immediate 2)) (.immediate 0) 4 4 1),
+  .core (.halt (.immediate 0))]
+
+theorem loopClient_valid : loopClient.Valid := by
+  intro pc instruction fetch target member
+  rcases List.getElem?_eq_some_iff.mp fetch with ⟨pcBelow, rfl⟩
+  have pcBelow' : pc < 5 := by simpa [loopClient] using pcBelow
+  interval_cases pc <;>
+    simp [loopClient, OpenInstruction.successors, RAM.Instruction.successors]
+      at member ⊢ <;> omega
+
+def loopInitial : Memory 8 := clientProblem.initialMemory () trivial
+def loopTwo : Memory 8 := loopInitial.write 2 2
+def loopOne : Memory 8 := loopTwo.write 2 1
+def loopZero : Memory 8 := loopOne.write 2 0
+
+def loopCallRecord (responder : AdmissibleResponder signature) :
+    DependencyCallRecord signature := {
+  callSite := 1
+  op := ()
+  input := ()
+  output := responder.answer () ()
+  outputCorrect := responder.correct () () trivial
+  chargedCost := 2
+  chargedCost_eq := rfl }
+
+/-- The backward branch executes the same call instruction twice in one relative trace. -/
+theorem loop_relative_trace (responder : AdmissibleResponder signature) :
+    OpenHaltingTrace signature responder loopClient ⟨0, loopInitial⟩ loopZero 0 10
+      [loopCallRecord responder, loopCallRecord responder] := by
+  have unitRep (memory : Memory 8) : WordLayout.unit.RepAt ⟨0⟩ () memory := by
+    constructor
+    · simp [WordLayout.FitsAt, WordLayout.Fits, WordLayout.footprintWords,
+        WordLayout.encode]
+    · intro index inRange
+      simp [WordLayout.footprintWords, WordLayout.encode] at inRange
+  have setStep : OpenStep signature responder loopClient ⟨0, loopInitial⟩
+      (.running ⟨1, loopTwo⟩) 1 none := by
+    exact OpenStep.core (instruction :=
+      .set (.immediate 2) (.immediate 2) 1) (by simp [loopClient]) (by
+      simp [loopInitial, loopTwo, RAM.execute, RAM.Operand.eval,
+        RAM.AddressOperand.eval, WordRAM.ops])
+  have firstCall : OpenStep signature responder loopClient ⟨1, loopTwo⟩
+      (.running ⟨2, loopTwo⟩) 2 (some (loopCallRecord responder)) := by
+    have raw := OpenStep.call (responder := responder) (program := loopClient)
+        (configuration := ⟨1, loopTwo⟩) (op := ())
+        (inputRegion := ⟨0⟩) (outputRegion := ⟨0⟩) (next := 2)
+        (input := ()) (by simp [loopClient]) (unitRep loopTwo) trivial
+    simpa [loopCallRecord, signature, dependencyContract, dependencyBound,
+      WordLayout.writeAt, WordLayout.footprintWords, WordLayout.encode] using raw
+  have firstSub : OpenStep signature responder loopClient ⟨2, loopTwo⟩
+      (.running ⟨3, loopOne⟩) 1 none := by
+    exact OpenStep.core (instruction :=
+      .sub (.load (.immediate 2)) (.immediate 1) (.immediate 2) 3)
+      (by simp [loopClient]) (by
+      simp [loopTwo, loopOne, RAM.execute, RAM.Operand.eval,
+        RAM.AddressOperand.eval, RAM.Memory.write, WordRAM.ops])
+  have backwardBranch : OpenStep signature responder loopClient ⟨3, loopOne⟩
+      (.running ⟨1, loopOne⟩) 1 none := by
+    exact OpenStep.core (instruction :=
+      .compare (.load (.immediate 2)) (.immediate 0) 4 4 1)
+      (by simp [loopClient]) (by
+      simp [loopOne, loopTwo, loopInitial, RAM.execute, RAM.Operand.eval,
+        RAM.AddressOperand.eval, RAM.Memory.write, WordRAM.ops, RAM.branch])
+  have secondCall : OpenStep signature responder loopClient ⟨1, loopOne⟩
+      (.running ⟨2, loopOne⟩) 2 (some (loopCallRecord responder)) := by
+    have raw := OpenStep.call (responder := responder) (program := loopClient)
+        (configuration := ⟨1, loopOne⟩) (op := ())
+        (inputRegion := ⟨0⟩) (outputRegion := ⟨0⟩) (next := 2)
+        (input := ()) (by simp [loopClient]) (unitRep loopOne) trivial
+    simpa [loopCallRecord, signature, dependencyContract, dependencyBound,
+      WordLayout.writeAt, WordLayout.footprintWords, WordLayout.encode] using raw
+  have secondSub : OpenStep signature responder loopClient ⟨2, loopOne⟩
+      (.running ⟨3, loopZero⟩) 1 none := by
+    exact OpenStep.core (instruction :=
+      .sub (.load (.immediate 2)) (.immediate 1) (.immediate 2) 3)
+      (by simp [loopClient]) (by
+      simp [loopZero, loopOne, loopTwo, loopInitial, RAM.execute, RAM.Operand.eval,
+        RAM.AddressOperand.eval, RAM.Memory.write, WordRAM.ops])
+  have exitBranch : OpenStep signature responder loopClient ⟨3, loopZero⟩
+      (.running ⟨4, loopZero⟩) 1 none := by
+    exact OpenStep.core (instruction :=
+      .compare (.load (.immediate 2)) (.immediate 0) 4 4 1)
+      (by simp [loopClient]) (by
+      simp [loopZero, loopOne, loopTwo, loopInitial, RAM.execute, RAM.Operand.eval,
+        RAM.AddressOperand.eval, RAM.Memory.write, WordRAM.ops, RAM.branch])
+  have haltStep : OpenStep signature responder loopClient ⟨4, loopZero⟩
+      (.halted loopZero 0) 1 none := by
+    exact OpenStep.core (instruction := .halt (.immediate 0))
+      (by simp [loopClient]) (by
+      simp [RAM.execute, RAM.Operand.eval, WordRAM.ops])
+  exact OpenHaltingTrace.next setStep
+    (OpenHaltingTrace.next firstCall
+      (OpenHaltingTrace.next firstSub
+        (OpenHaltingTrace.next backwardBranch
+          (OpenHaltingTrace.next secondCall
+            (OpenHaltingTrace.next secondSub
+              (OpenHaltingTrace.next exitBranch
+                (OpenHaltingTrace.halt haltStep)))))))
+
+theorem loop_call_cost_is_charged_twice :
+    totalDependencyCost
+      [loopCallRecord implementations.responder,
+        loopCallRecord implementations.responder] = 4 := by
+  rfl
+
+theorem loop_call_count_is_two :
+    dependencyCallCount ()
+      [loopCallRecord implementations.responder,
+        loopCallRecord implementations.responder] = 2 := by
+  decide
+
+theorem loop_compatibility :
+    Linker.Compatibility loopClient implementations linkerConfiguration := by
+  refine {
+    clientFits := by decide
+    clientAvoidsReturnRegister := ?_
+    inputRegion_eq := ?_
+    outputRegion_eq := ?_ }
+  · intro pc instruction fetch
+    have pcBelow := List.getElem?_eq_some_iff.mp fetch |>.1
+    have pcBelow' : pc < 5 := by simpa [loopClient] using pcBelow
+    interval_cases pc <;> simp [loopClient] at fetch
+    all_goals subst instruction <;>
+      simp [Linker.instructionAvoids, Linker.operandAvoids,
+        Linker.addressOperandAvoids, linkerConfiguration]
+  · intro pc op inputRegion outputRegion next fetch
+    cases op
+    have pcBelow := List.getElem?_eq_some_iff.mp fetch |>.1
+    have pcBelow' : pc < 5 := by simpa [loopClient] using pcBelow
+    interval_cases pc <;> simp [loopClient] at fetch
+    rcases fetch with ⟨rfl, rfl, rfl⟩
+    simp [implementations, dependencyProcedureCertificate]
+  · intro pc op inputRegion outputRegion next fetch
+    cases op
+    have pcBelow := List.getElem?_eq_some_iff.mp fetch |>.1
+    have pcBelow' : pc < 5 := by simpa [loopClient] using pcBelow
+    interval_cases pc <;> simp [loopClient] at fetch
+    rcases fetch with ⟨rfl, rfl, rfl⟩
+    simp [implementations, dependencyProcedureCertificate]
+
+/-- Linking runs both dynamic callee invocations in the concrete same-machine trace. -/
+theorem loop_linked_trace_exists :
+    ∃ linkedCost linkedSteps,
+      RAM.HaltingTrace
+        (WordRAM.stepCosted (Linker.link loopClient implementations linkerConfiguration))
+        ⟨0, loopInitial⟩ loopZero 0 linkedCost linkedSteps ∧
+      linkedCost ≤ 16 := by
+  obtain ⟨linkedCost, linkedSteps, trace, bounded⟩ :=
+    Linker.refine_trace loopClient implementations linkerConfiguration loop_compatibility
+      (loop_relative_trace implementations.responder) (by
+        simp [loopInitial, clientProblem, StructuredProblem.initialMemory,
+          WordLayout.init, WordLayout.encode])
+  refine ⟨linkedCost, linkedSteps, trace, ?_⟩
+  simpa [Linker.totalConcreteCallOverhead, Linker.concreteCallOverhead,
+    loopCallRecord] using bounded
+
+/-- Repeated runtime calls retain one statically materialized implementation body. -/
+theorem loop_has_one_shared_body :
+    Linker.implementationCodeSize implementations = dependencyProgram.length := by
+  simp [Linker.implementationCodeSize, Linker.operations, implementations,
+    dependencyProcedureCertificate, dependencyProgram, signature]
+
+#print axioms loop_linked_trace_exists
+
+end RuntimeLoopRegression
+
 namespace RandomizedIntegrationModule
 
 open ContractModule RelativeClientModule DependencyImplementationModule IntegrationModule
@@ -428,7 +604,8 @@ theorem relativeSuccessEvent_eq_univ
       WordLayout.encode])
 
 def clientCertificate :
-    RandomRelativeAlgorithmCertificate signature clientProblem stepBound drawBound failure where
+    HighProbabilityBoundedSuccessRelativeCertificate signature clientProblem
+      stepBound drawBound failure where
   program := clientProgram
   valid := by
     intro pc instruction fetch target member
@@ -523,19 +700,93 @@ def assumptions : RandomLinker.LinkingAssumptions clientCertificate implementati
     exact MeasurableSet.univ
 
 noncomputable def linkedCertificate :
-    clientProblem.RandomizedAlgorithmCertificate
+    clientProblem.HighProbabilityBoundedSuccessCertificate
       (RandomLinker.linkedStepBound stepBound overheadBound) drawBound failure :=
   RandomLinker.certificate clientCertificate implementations linkerConfiguration overheadBound
     assumptions
 
 /-- Randomized one-line discharge uses the same hidden source and the deterministic body code. -/
 theorem client_unconditional :
-    clientProblem.HasRandomizedWordRAMAlgorithm
+    clientProblem.HasHighProbabilityBoundedSuccessAlgorithm
       (RandomLinker.linkedStepBound stepBound overheadBound) drawBound failure :=
   RandomLinker.hasAlgorithm clientCertificate implementations linkerConfiguration overheadBound
     assumptions
 
+/-- Correctness without the timeout/resource conjunct is universal in this concrete example. -/
+theorem relativeCorrectEvent_eq_univ
+    (responder : AdmissibleResponder signature) (input : clientProblem.Input)
+    (validInput : clientProblem.pre input) :
+    RandomRelativeCorrectEvent signature responder clientProblem clientProgram
+      input validInput = Set.univ := by
+  apply Set.eq_univ_of_forall
+  intro source
+  have success : source ∈ RandomRelativeSuccessEvent signature responder clientProblem
+      clientProgram stepBound drawBound input validInput := by
+    rw [relativeSuccessEvent_eq_univ responder input validInput]
+    trivial
+  rcases success with ⟨final, result, draws, cost, calls, output, trace,
+    outputRep, correct, stepCost, drawCost⟩
+  exact ⟨final, result, draws, cost, calls, output, trace, outputRep, correct⟩
+
+def boundedTimeClientCertificate :
+    BoundedTimeMonteCarloRelativeCertificate signature clientProblem
+      stepBound drawBound failure where
+  program := clientProgram
+  valid := clientCertificate.valid
+  terminatesWithin responder source input validInput := by
+    have success : source ∈ RandomRelativeSuccessEvent signature responder clientProblem
+        clientProgram stepBound drawBound input validInput := by
+      rw [relativeSuccessEvent_eq_univ responder input validInput]
+      trivial
+    rcases success with ⟨final, result, draws, cost, calls, output, trace,
+      outputRep, correct, stepCost, drawCost⟩
+    exact ⟨final, result, draws, cost, calls, output, trace, outputRep, stepCost, drawCost⟩
+  correctMeasurable responder input validInput := by
+    rw [relativeCorrectEvent_eq_univ responder input validInput]
+    exact MeasurableSet.univ
+  correctProbability responder input validInput := by
+    rw [relativeCorrectEvent_eq_univ responder input validInput]
+    simp
+
+theorem linkedCorrectEvent_eq_univ (input : clientProblem.Input)
+    (validInput : clientProblem.pre input) :
+    clientProblem.RandomCorrectEvent
+      (RandomLinker.link clientProgram implementations linkerConfiguration)
+      input validInput = Set.univ := by
+  apply Set.eq_univ_of_forall
+  intro source
+  apply RandomLinker.boundedTime_correctEvent_mono boundedTimeClientCertificate
+    implementations linkerConfiguration compatibility
+  · change source ∈ RandomRelativeCorrectEvent signature implementations.responder
+      clientProblem clientProgram input validInput
+    rw [relativeCorrectEvent_eq_univ implementations.responder input validInput]
+    trivial
+
+def boundedTimeAssumptions : RandomLinker.BoundedTimeLinkingAssumptions
+    boundedTimeClientCertificate implementations linkerConfiguration overheadBound where
+  compatible := compatibility
+  overhead_le := overhead_le
+  correctMeasurable input validInput := by
+    change MeasurableSet (clientProblem.RandomCorrectEvent
+      (RandomLinker.link clientProgram implementations linkerConfiguration) input validInput)
+    rw [linkedCorrectEvent_eq_univ input validInput]
+    exact MeasurableSet.univ
+
+noncomputable def boundedTimeLinkedCertificate :
+    clientProblem.BoundedTimeMonteCarloCertificate
+      (RandomLinker.linkedStepBound stepBound overheadBound) drawBound failure :=
+  RandomLinker.boundedTimeCertificate boundedTimeClientCertificate implementations
+    linkerConfiguration overheadBound boundedTimeAssumptions
+
+/-- The linked theorem retains the every-source runtime guarantee and unchanged draw bound. -/
+theorem boundedTimeClient_unconditional :
+    clientProblem.HasBoundedTimeMonteCarloAlgorithm
+      (RandomLinker.linkedStepBound stepBound overheadBound) drawBound failure :=
+  RandomLinker.hasBoundedTimeMonteCarloAlgorithm boundedTimeClientCertificate implementations
+    linkerConfiguration overheadBound boundedTimeAssumptions
+
 #print axioms client_unconditional
+#print axioms boundedTimeClient_unconditional
 
 end RandomizedIntegrationModule
 

@@ -15,6 +15,7 @@ public import Algolean.Complexity.WordRAMRandomizedRelative
 public import Algolean.Complexity.WordRAMUniformProcedure
 public import Algolean.Complexity.WordRAMUniformLinking
 public import Algolean.Models.WordRAM.Data.IndexedArray
+public import Algolean.Models.WordRAM.Data.Physical
 public import Algolean.Models.WordRAM.TypedRegion
 public import Algolean.Models.WordRAM.Derive
 
@@ -227,6 +228,34 @@ theorem not_realizable : ¬ overlapping.Realizes contract := by
     exact ⟨0, by simp [WordLayout.footprintWords, WordLayout.encode], by simp⟩
   exact disjoint 0 ⟨inputOccupies, outputOccupies⟩
 
+def finalAddressContract : ProcedureContract 8 where
+  widthAtLeastTwo := by decide
+  Input := BitVec 8 × BitVec 8
+  Output := Unit
+  inputLayout := .prod .word .word
+  outputLayout := .unit
+  pre _ := True
+  post _ _ := True
+  inputFits _ _ := by
+    simp [WordLayout.Fits, WordLayout.footprintWords, WordLayout.encode]
+  outputFits _ _ _ _ := trivial
+
+def finalAddressConvention : CallingConvention 8 where
+  inputRegion := ⟨255⟩
+  outputRegion := ⟨0⟩
+  scratchOwned _ := False
+  registerOwned _ := False
+  aliasingPolicy := .inPlace
+
+/-- A two-word value cannot start in the final addressable word without wrapping. -/
+theorem multiword_at_final_address_not_realizable :
+    ¬ finalAddressConvention.Realizes finalAddressContract := by
+  intro realizes
+  have fits := realizes.inputFitsAt ((0 : BitVec 8), (0 : BitVec 8)) trivial
+  have addressFit := fits.2
+  dsimp [finalAddressConvention, finalAddressContract] at addressFit
+  norm_num [WordLayout.footprintWords, WordLayout.encode] at addressFit
+
 end AdversarialProcedureABI
 
 namespace ActualOutputFrame
@@ -338,6 +367,130 @@ example : ¬ IndexedArray.Valid (WordLayout.bool (w := 8)) malformedOffsets := b
   have right : (malformedOffsets.1.data.getD 0 0).toNat = 0 := by decide
   rw [left, right] at boundary
   norm_num [WordLayout.footprintWords, WordLayout.encode] at boundary
+
+namespace CanonicalIndexedLookup
+
+def elementLayout : WordLayout 8 (List Bool) := .list .bool
+
+def payload : WordArray 8 (BitVec 8) × WordArray 8 (List Bool) :=
+  (WordArray.mk #[0, 1, 4] (by decide),
+    WordArray.mk #[[], [false, true]] (by decide))
+
+def valid : IndexedArray.Valid elementLayout payload := by
+  refine ⟨by decide, by decide, ?_, by native_decide, by decide⟩
+  intro index inRange
+  have : index = 0 ∨ index = 1 := by
+    change index < 2 at inRange
+    omega
+  rcases this with rfl | rfl <;>
+    native_decide
+
+def value : IndexedArrayWithLayout elementLayout := Tagged.mk ⟨payload, valid⟩
+
+def fits : (indexedArrayLayout elementLayout).FitsInput value := by
+  simp [WordLayout.FitsInput, WordLayout.FitsAt, indexedArrayLayout, wordArrayLayout,
+    value, payload, elementLayout, WordLayout.Fits, WordLayout.footprintWords,
+    WordLayout.encode, WordLayout.encodeList]
+  native_decide
+
+def initial : Memory 8 :=
+  ((indexedArrayLayout elementLayout).init value fits).writeAddress 0 1
+
+def reference : IndexedArrayRef 8 (List Bool) := ⟨elementLayout, 0⟩
+
+/-- Runtime lookup reads the canonical cached boundary for a variable-footprint element. -/
+example :
+    ∃ final,
+      RAM.HaltingTrace (stepCosted (reference.getProgram 0 1 2 3 4 5))
+        ⟨0, initial⟩ final 0 7 7 ∧
+      final.data = initial.data ∧
+      final.address 5 = (reference.elementRegion payload 1).base := by
+  apply reference.getProgram_trace_canonical payload valid initial 1 0 1 2 3 4 5
+  · simp [initial, RAM.Memory.writeAddress]
+  · decide
+  · decide
+  · change (indexedArrayLayout elementLayout).RepAt (WordLayout.inputRegion 8) value initial
+    have represented := (indexedArrayLayout elementLayout).init_rep value fits
+    refine ⟨represented.1, ?_⟩
+    intro offset inRange
+    simpa [initial, RAM.Memory.writeAddress] using represented.2 offset inRange
+
+end CanonicalIndexedLookup
+
+namespace ExactGraphRepresentation
+
+def payload : BitVec 8 × BitVec 8 × WordArray 8 (BitVec 8) ×
+    WordArray 8 (BitVec 8) × WordArray 8 Unit :=
+  (2, 1, WordArray.mk #[0] (by decide), WordArray.mk #[1] (by decide),
+    WordArray.mk #[()] (by decide))
+
+def valid : DirectedEdgeList.Valid payload := by
+  refine ⟨rfl, rfl, rfl, ?_⟩
+  intro endpoint member
+  change endpoint ∈ #[0#8] ++ #[1#8] at member
+  simp at member
+  rcases member with rfl | rfl <;> decide
+
+def graph : DirectedEdgeList 8 Unit := Tagged.mk ⟨payload, valid⟩
+
+def storedEdge (tail head : Nat) (_ : Unit) : Prop := tail = 0 ∧ head = 1
+
+def intendedAdjacency (tail head : Nat) : Prop :=
+  (tail = 0 ∧ head = 1) ∨ (tail = 1 ∧ head = 0)
+
+/-- One-sided stored-edge validation does not establish completeness. -/
+theorem everyStoredEdge : DirectedEdgeList.EveryStoredEdgeSatisfies graph storedEdge := by
+  intro index below
+  have edgeCount : graph.edgeCount.toNat = 1 := by native_decide
+  have indexZero : index = 0 := by
+    rw [edgeCount] at below
+    omega
+  subst index
+  have tailZero : (graph.tail.data.getD 0 0).toNat = 0 := by native_decide
+  have headOne : (graph.head.data.getD 0 0).toNat = 1 := by native_decide
+  refine ⟨(), ?_, ?_⟩
+  · native_decide
+  · rw [tailZero, headOne]
+    exact ⟨rfl, rfl⟩
+
+/-- The omitted reverse edge witnesses failure of exact representation. -/
+theorem notExact : ¬ DirectedEdgeList.RepresentsExactly graph intendedAdjacency := by
+  intro exactRepresentation
+  rcases exactRepresentation.2 1 0 (by right; exact ⟨rfl, rfl⟩) with
+    ⟨index, below, tail, head⟩
+  have edgeCount : graph.edgeCount.toNat = 1 := by native_decide
+  have indexZero : index = 0 := by
+    rw [edgeCount] at below
+    omega
+  subst index
+  have tailZero : (graph.tail.data.getD 0 0).toNat = 0 := by native_decide
+  rw [tailZero] at tail
+  norm_num at tail
+
+end ExactGraphRepresentation
+
+/- No preferred instruction can package a host-language word operation as one step. -/
+/-
+error: Unknown constant
+-/
+#guard_msgs (error, substring := true) in
+#check ExtraInstruction.arbitraryWordOperation
+
+#check RunningSegment.trans
+#check RunningSegment.thenHalting
+#check AddressPlan.fixedIndex_segment
+#check PreprocessedWordOperationLibrary.preprocessing
+#check RichWordAlgorithmCertificate.lowerToCore
+#check RichWordAlgorithmCertificate.preprocessingBody_materialized_once
+#check StructuredProblem.HighProbabilityBoundedSuccessCertificate
+#check StructuredProblem.BoundedTimeMonteCarloCertificate
+#check StructuredProblem.OneSidedBoundedTimeMonteCarloCertificate
+#check StructuredProblem.LasVegasExpectedTimeCertificate
+#check StructuredProblem.LasVegasHighProbabilityTimeCertificate
+#check StructuredProblem.AlmostSureLasVegasCertificate
+#check StructuredProblem.ExpectedApproximationCertificate
+#check StructuredProblem.SamplerCertificate
+#check StructuredProblem.finite_output_support_of_prefix_factor
 
 #layout_audit WordRAM 8 (BitVec 8 × Option Bool)
 

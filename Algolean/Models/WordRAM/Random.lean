@@ -40,6 +40,28 @@ instance : IsProbabilityMeasure sourceLaw := by
   unfold sourceLaw
   infer_instance
 
+/-- Every hidden source coordinate has the fixed fair-bit law. -/
+theorem sourceLaw_map_eval (index : Nat) :
+    sourceLaw.map (fun source ↦ source index) = coordinateLaw := by
+  simpa [sourceLaw] using
+    (Measure.infinitePi_map_eval (μ := fun _ : Nat ↦ coordinateLaw) index)
+
+/-- A particular hidden bit is false with probability exactly one half. -/
+@[simp] theorem sourceLaw_eval_false (index : Nat) :
+    sourceLaw {source | source index = false} = (2 : ENNReal)⁻¹ := by
+  change sourceLaw ((fun source ↦ source index) ⁻¹' {false}) = _
+  rw [← Measure.map_apply (measurable_pi_apply index) (by measurability),
+    sourceLaw_map_eval]
+  simp [coordinateLaw]
+
+/-- A particular hidden bit is true with probability exactly one half. -/
+@[simp] theorem sourceLaw_eval_true (index : Nat) :
+    sourceLaw {source | source index = true} = (2 : ENNReal)⁻¹ := by
+  change sourceLaw ((fun source ↦ source index) ⁻¹' {true}) = _
+  rw [← Measure.map_apply (measurable_pi_apply index) (by measurability),
+    sourceLaw_map_eval]
+  simp [coordinateLaw]
+
 /-- Closed randomized profile syntax. -/
 inductive Instruction (w : Nat) where
   | core (instruction : RAM.Instruction (BitVec w) (BitVec w) (ExtraInstruction w))
@@ -142,6 +164,37 @@ inductive RawHaltingTrace (program : Program w) (source : Source) :
         ⟨.running nextConfiguration, headCost⟩)
       (tail : RawHaltingTrace program source nextConfiguration memory result draws tailCost) :
       RawHaltingTrace program source configuration memory result draws (headCost + tailCost)
+
+/-- Determinism of the closed transition function makes every terminating trace unique. -/
+theorem RawHaltingTrace.deterministic
+    (left : RawHaltingTrace program source initial leftFinal leftResult leftDraws leftCost)
+    (right : RawHaltingTrace program source initial rightFinal rightResult rightDraws rightCost) :
+    leftFinal = rightFinal ∧ leftResult = rightResult ∧ leftDraws = rightDraws ∧
+      leftCost = rightCost := by
+  induction left generalizing rightFinal rightResult rightDraws rightCost with
+  | halt leftObserved =>
+      cases right with
+      | halt rightObserved =>
+          rw [leftObserved] at rightObserved
+          cases rightObserved
+          exact ⟨rfl, rfl, rfl, rfl⟩
+      | next rightObserved rightTail =>
+          rw [leftObserved] at rightObserved
+          cases rightObserved
+  | next leftObserved leftTail induction =>
+      cases right with
+      | halt rightObserved =>
+          rw [leftObserved] at rightObserved
+          cases rightObserved
+      | next rightObserved rightTail =>
+          rw [leftObserved] at rightObserved
+          cases rightObserved
+          obtain ⟨finalEq, resultEq, drawsEq, tailCostEq⟩ := induction rightTail
+          subst finalEq
+          subst resultEq
+          subst drawsEq
+          subst tailCostEq
+          exact ⟨rfl, rfl, rfl, rfl⟩
 
 /-- A running transition reports exactly the change of the hidden source cursor. -/
 theorem step_running_cursor

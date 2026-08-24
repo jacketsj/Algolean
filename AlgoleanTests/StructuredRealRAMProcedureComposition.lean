@@ -31,6 +31,11 @@ open Algorithms.StructuredRealRAM
 #check RandomLinker.refine_trace
 #check RandomLinker.certificate
 #check RandomLinker.hasAlgorithm
+#check RandomLinker.boundedTimeMonteCarloCertificate
+#check RandomLinker.hasBoundedTimeMonteCarloAlgorithm
+#check UniformRealLinker.refine_trace
+#check UniformRealLinker.certificate
+#check UniformRealLinker.hasBoundedTimeMonteCarloAlgorithm
 
 /-
 error: Unknown constant
@@ -613,17 +618,397 @@ def assumptions : RandomLinker.LinkingAssumptions clientCertificate implementati
     exact MeasurableSet.univ
 
 noncomputable def linkedCertificate :
-    BitRandomizedMachineProblem.MonteCarloAlgorithmCertificate problem linkedBound failure :=
-  RandomLinker.certificate clientCertificate implementations linkerConfiguration linkedBound
+    BitRandomizedMachineProblem.BoundedTimeMonteCarloAlgorithmCertificate
+      problem linkedBound failure :=
+  RandomLinker.boundedTimeMonteCarloCertificate clientCertificate implementations
+    linkerConfiguration linkedBound
     assumptions
 
 /-- Randomized discharge reuses the deterministic dependency without changing the source. -/
-theorem client_unconditional : problem.HasMonteCarloAlgorithm linkedBound failure :=
-  RandomLinker.hasAlgorithm clientCertificate implementations linkerConfiguration linkedBound
-    assumptions
+theorem client_unconditional :
+    problem.HasBoundedTimeMonteCarloAlgorithm linkedBound failure :=
+  RandomLinker.hasBoundedTimeMonteCarloAlgorithm clientCertificate implementations
+    linkerConfiguration linkedBound assumptions
 
 #print axioms client_unconditional
 
 end RandomizedIntegrationModule
+
+namespace UniformRealIntegrationSyntax
+
+open ContractModule RelativeClientModule DependencyImplementationModule IntegrationModule
+
+/-- A concrete relative client containing both one exact sample and one deterministic call. -/
+def clientProgram : UniformOpenProgram signature :=
+  [.machine (.sampleUniform 0 1),
+    .call () Layout.inputRegion Layout.inputRegion 2,
+    .machine (.core (.halt (.literal 0)))]
+
+/-- Linking preserves the exact-uniform instruction rather than replacing its hidden source. -/
+example :
+    (UniformRealLinker.link clientProgram implementations linkerConfiguration)[0]? =
+      some (.sampleUniform 0 1) := by
+  have fetched : clientProgram[0]? = some (.machine (.sampleUniform 0 1)) := by
+    simp [clientProgram]
+  simpa [UniformRealLinker.clientInstruction] using
+    UniformRealLinker.link_fetch_client clientProgram implementations linkerConfiguration
+      0 (.machine (.sampleUniform 0 1)) fetched
+
+/-- The deterministic call site is resolved to ordinary shared-body linker syntax. -/
+example :
+    (UniformRealLinker.link clientProgram implementations linkerConfiguration)[1]? =
+      some (.core (Linker.clientInstruction
+        (UniformRealLinker.placement clientProgram) implementations linkerConfiguration 1
+        (.call () Layout.inputRegion Layout.inputRegion 2))) := by
+  have fetched : clientProgram[1]? =
+      some (.call () Layout.inputRegion Layout.inputRegion 2) := by
+    simp [clientProgram]
+  simpa [UniformRealLinker.clientInstruction] using
+    UniformRealLinker.link_fetch_client clientProgram implementations linkerConfiguration
+      1 (.call () Layout.inputRegion Layout.inputRegion 2) fetched
+
+/-- Exact-uniform linking has the same finite instruction count as its deterministic artifact. -/
+example :
+    (UniformRealLinker.link clientProgram implementations linkerConfiguration).length =
+      (UniformRealLinker.deterministicArtifact clientProgram implementations
+        linkerConfiguration).length :=
+  UniformRealLinker.link_length clientProgram implementations linkerConfiguration
+
+/- The refinement theorem keeps the source, cursor, and draw count in one linked trace. -/
+#check UniformRealLinker.refine_trace
+
+/-- Completed assumptions discharge the relative theorem in one application. -/
+example
+    {problem : UniformRealRandomizedMachineProblem}
+    {relativeBound linkedBound : Nat → UniformReal.Cost}
+    {failure : problem.Input → Probability}
+    (client : UniformRealBoundedTimeMonteCarloRelativeCertificate signature problem
+      relativeBound failure)
+    (assumptions : UniformRealLinker.LinkingAssumptions client implementations
+      linkerConfiguration linkedBound) :
+    problem.HasBoundedTimeMonteCarloAlgorithm linkedBound failure :=
+  UniformRealLinker.hasBoundedTimeMonteCarloAlgorithm client implementations
+    linkerConfiguration linkedBound assumptions
+
+end UniformRealIntegrationSyntax
+
+namespace UniformRealConcreteIntegration
+
+open ContractModule RelativeClientModule DependencyImplementationModule IntegrationModule
+open MeasureTheory
+
+def problem : UniformRealRandomizedMachineProblem where
+  Input := Unit
+  Output := Unit
+  inputLayout := .unit
+  outputLayout := .unit
+  outputRegion := Layout.inputRegion
+  pre _ := True
+  post _ _ := True
+
+/-- One deterministic call, one exact sample, and one halt in finite first-order syntax. -/
+def clientProgram : UniformOpenProgram signature :=
+  [.call () Layout.inputRegion Layout.inputRegion 1,
+    .machine (.sampleUniform 0 2),
+    .machine (.core (.halt (.literal 0)))]
+
+def relativeBound : Nat → UniformReal.Cost := fun _ ↦
+  RandomBit.Cost.ofCore (dependencyBound ()) + (UniformReal.sampleCost +
+    RandomBit.Cost.ofCore (Instruction.halt (.literal 0)).cost)
+
+def failure : problem.Input → Probability := fun _ ↦ ⟨0, by simp⟩
+
+theorem unitRep_writeReal (memory : Memory)
+    (represented : Layout.unit.RepAt Layout.inputRegion () memory)
+    (address : Nat) (value : Real) :
+    Layout.unit.RepAt Layout.inputRegion () (memory.writeReal address value) := by
+  simpa [Layout.RepAt, Layout.encode, Layout.readReals, Layout.readNats,
+    Memory.writeReal] using represented
+
+theorem relativeSuccessEvent_eq_univ
+    (responder : AdmissibleResponder signature) (input : problem.Input)
+    (validInput : problem.pre input) :
+    UniformRelativeSuccessEvent signature responder problem clientProgram relativeBound input =
+      Set.univ := by
+  apply Set.eq_univ_of_forall
+  intro source
+  cases input
+  let initial := problem.initialMemory ()
+  have inputRep : Layout.unit.RepAt Layout.inputRegion () initial := Layout.unit.init_rep ()
+  let afterCall := (signature.contract ()).outputLayout.writeAt Layout.inputRegion
+    (responder.answer () ()) initial
+  have callStep : UniformOpenStep signature responder clientProgram source
+      (RandomBit.Configuration.initial initial) (.running ⟨1, afterCall, 0⟩)
+      (RandomBit.Cost.ofCore (signature.bound () ())) (some {
+        callSite := 0
+        op := ()
+        input := ()
+        output := responder.answer () ()
+        outputCorrect := responder.correct () () trivial
+        chargedCost := signature.bound () ()
+        chargedCost_eq := rfl }) := by
+    have raw := UniformOpenStep.call
+      (signature := signature) (responder := responder) (program := clientProgram)
+      (source := source) (configuration := RandomBit.Configuration.initial initial) (op := ())
+      (inputRegion := Layout.inputRegion) (outputRegion := Layout.inputRegion)
+      (next := 1) (input := ()) (by simp [clientProgram, RandomBit.Configuration.initial])
+      inputRep trivial
+    simpa [afterCall, RandomBit.Configuration.initial] using raw
+  have afterCallRep : Layout.unit.RepAt Layout.inputRegion () afterCall := by
+    change Layout.unit.RepAt Layout.inputRegion ()
+      (Layout.unit.writeAt Layout.inputRegion () initial)
+    exact Layout.unit.writeAt_rep Layout.inputRegion () initial
+  let afterSample := afterCall.writeReal (afterCall.natReg 0) (source 0)
+  have sampleStep : UniformOpenStep signature responder clientProgram source ⟨1, afterCall, 0⟩
+      (.running ⟨2, afterSample, 1⟩) UniformReal.sampleCost none := by
+    exact UniformOpenStep.machine (instruction := .sampleUniform 0 2)
+      (by simp [clientProgram]) (by simp [UniformReal.execute, afterSample])
+  have afterSampleRep : Layout.unit.RepAt Layout.inputRegion () afterSample :=
+    unitRep_writeReal afterCall afterCallRep _ _
+  have haltStep : UniformOpenStep signature responder clientProgram source ⟨2, afterSample, 1⟩
+      (.halted afterSample 0 1)
+      (RandomBit.Cost.ofCore (Instruction.halt (.literal 0)).cost) none := by
+    exact UniformOpenStep.machine (instruction := .core (.halt (.literal 0)))
+      (by simp [clientProgram]) (by
+        simp [UniformReal.execute, UniformReal.liftCoreOutcome, execute, RealOperand.eval])
+  have trace : UniformOpenHaltingTrace signature responder clientProgram source
+      (RandomBit.Configuration.initial initial) afterSample 0
+      (RandomBit.Cost.ofCore (signature.bound () ()) + (UniformReal.sampleCost +
+        RandomBit.Cost.ofCore (Instruction.halt (.literal 0)).cost))
+      3 1 [{
+        callSite := 0
+        op := ()
+        input := ()
+        output := responder.answer () ()
+        outputCorrect := responder.correct () () trivial
+        chargedCost := signature.bound () ()
+        chargedCost_eq := rfl }] :=
+    UniformOpenHaltingTrace.call callStep
+      (UniformOpenHaltingTrace.machine sampleStep (UniformOpenHaltingTrace.halt haltStep))
+  refine ⟨(), afterSample, 0, _, 3, 1, _, trace, afterSampleRep, trivial, ?_⟩
+  change RandomBit.Cost.ofCore (signature.bound () ()) + (UniformReal.sampleCost +
+      RandomBit.Cost.ofCore (Instruction.halt (.literal 0)).cost) ≤ relativeBound 2
+  exact le_rfl
+
+def clientCertificate :
+    UniformRealBoundedTimeMonteCarloRelativeCertificate signature problem relativeBound failure where
+  program := clientProgram
+  valid := by
+    intro pc instruction fetch target member
+    rcases List.getElem?_eq_some_iff.mp fetch with ⟨pcBelow, rfl⟩
+    have pcBelow' : pc < 3 := by simpa [clientProgram] using pcBelow
+    interval_cases pc
+    · simp [clientProgram, UniformOpenInstruction.successors] at member
+      change target < 3
+      omega
+    · simp [clientProgram, UniformOpenInstruction.successors,
+        UniformReal.Instruction.successors] at member
+      change target < 3
+      omega
+    · simp [clientProgram, UniformOpenInstruction.successors,
+        UniformReal.Instruction.successors, Instruction.successors] at member
+  measurableSuccess responder input validInput := by
+    rw [relativeSuccessEvent_eq_univ responder input validInput]
+    exact MeasurableSet.univ
+  terminates responder input validInput source := by
+    have success : source ∈ UniformRelativeSuccessEvent signature responder problem
+        clientProgram relativeBound input := by
+      rw [relativeSuccessEvent_eq_univ responder input validInput]
+      trivial
+    rcases success with ⟨output, final, result, cost, steps, draws, calls, trace,
+      outputRep, correct, costBound⟩
+    exact ⟨output, final, result, cost, steps, draws, calls, trace, outputRep, costBound⟩
+  successProbability responder input validInput := by
+    rw [relativeSuccessEvent_eq_univ responder input validInput]
+    simp
+
+theorem compatibility :
+    Linker.Compatibility (UniformRealLinker.placement clientProgram) implementations
+      linkerConfiguration := by
+  refine {
+    clientAvoidsReturnRegister := ?_
+    inputRegion_eq := ?_
+    outputRegion_eq := ?_ }
+  · intro pc instruction fetch
+    have pcBelow := List.getElem?_eq_some_iff.mp fetch |>.1
+    have pcBelow' : pc < 3 := by
+      simpa [UniformRealLinker.placement, clientProgram] using pcBelow
+    interval_cases pc <;>
+      simp [UniformRealLinker.placement, UniformRealLinker.placementInstruction,
+        clientProgram] at fetch
+    · subst instruction
+      trivial
+    · subst instruction
+      trivial
+  · intro pc op inputRegion outputRegion next fetch
+    have pcBelow := List.getElem?_eq_some_iff.mp fetch |>.1
+    have pcBelow' : pc < 3 := by
+      simpa [UniformRealLinker.placement, clientProgram] using pcBelow
+    interval_cases pc <;>
+      simp [UniformRealLinker.placement, UniformRealLinker.placementInstruction,
+        clientProgram] at fetch
+    rcases fetch with ⟨rfl, rfl, rfl, rfl⟩
+    rfl
+  · intro pc op inputRegion outputRegion next fetch
+    have pcBelow := List.getElem?_eq_some_iff.mp fetch |>.1
+    have pcBelow' : pc < 3 := by
+      simpa [UniformRealLinker.placement, clientProgram] using pcBelow
+    interval_cases pc <;>
+      simp [UniformRealLinker.placement, UniformRealLinker.placementInstruction,
+        clientProgram] at fetch
+    rcases fetch with ⟨rfl, rfl, rfl, rfl⟩
+    rfl
+
+theorem returnRegisterInitiallyZero (input : problem.Input) :
+    (problem.initialMemory input).natReg linkerConfiguration.returnRegister = 0 := by
+  simp [problem, UniformRealRandomizedMachineProblem.initialMemory,
+    linkerConfiguration, Layout.init]
+
+theorem calls_singleton (source : UniformReal.Source) (input : problem.Input)
+    (validInput : problem.pre input) (final : Memory) (result : Real)
+    (cost : UniformReal.Cost) (steps draws : Nat)
+    (calls : List (DependencyCallRecord signature))
+    (trace : UniformOpenHaltingTrace signature implementations.responder clientProgram source
+      (RandomBit.Configuration.initial (problem.initialMemory input))
+      final result cost steps draws calls) :
+    ∃ call, calls = [call] ∧ call.callSite = 0 := by
+  cases trace with
+  | halt step =>
+      cases step with
+      | machine fetch executes =>
+          change clientProgram[0]? = _ at fetch
+          simp [clientProgram] at fetch
+  | machine step tail =>
+      cases step with
+      | machine fetch executes =>
+          change clientProgram[0]? = _ at fetch
+          simp [clientProgram] at fetch
+  | call step tail =>
+      cases step with
+      | call fetch inputRep valid =>
+          change clientProgram[0]? = _ at fetch
+          simp [clientProgram] at fetch
+          rcases fetch with ⟨rfl, rfl, rfl, rfl⟩
+          cases tail with
+          | halt secondStep =>
+              cases secondStep with
+              | machine secondFetch secondExec =>
+                  change clientProgram[1]? = _ at secondFetch
+                  simp [clientProgram] at secondFetch
+                  cases secondFetch
+                  simp [UniformReal.execute] at secondExec
+          | call secondStep secondTail =>
+              cases secondStep with
+              | call secondFetch secondRep secondValid =>
+                  change clientProgram[1]? = _ at secondFetch
+                  simp [clientProgram] at secondFetch
+          | @machine secondConfiguration nextConfiguration finalMemory finalResult
+              secondHeadCost secondTailCost secondSteps secondDraws secondCalls
+              secondStep secondTail =>
+              cases secondStep with
+              | machine secondFetch secondExec =>
+                  change clientProgram[1]? = _ at secondFetch
+                  simp [clientProgram] at secondFetch
+                  cases secondFetch
+                  have nextPc : nextConfiguration.pc = 2 := by
+                    have observedPc := congrArg (fun observation =>
+                      match observation.outcome with
+                      | .running configuration => configuration.pc
+                      | _ => 0) secondExec
+                    simpa [UniformReal.execute] using observedPc.symm
+                  cases secondTail with
+                  | halt finalStep =>
+                      cases finalStep with
+                      | machine finalFetch finalExec =>
+                          rw [nextPc] at finalFetch
+                          simp [clientProgram] at finalFetch
+                          cases finalFetch
+                          exact ⟨_, rfl, rfl⟩
+                  | call finalStep finalTail =>
+                      cases finalStep with
+                      | call finalFetch finalRep finalValid =>
+                          rw [nextPc] at finalFetch
+                          simp [clientProgram] at finalFetch
+                  | machine finalStep finalTail =>
+                      cases finalStep with
+                      | machine finalFetch finalExec =>
+                          rw [nextPc] at finalFetch
+                          simp [clientProgram] at finalFetch
+                          cases finalFetch
+                          simp [UniformReal.execute, UniformReal.liftCoreOutcome,
+                            StructuredRealRAM.execute] at finalExec
+
+def fixedOverhead : Cost := RandomizedIntegrationModule.fixedOverhead
+
+def linkedBound : Nat → UniformReal.Cost := fun size ↦
+  relativeBound size + RandomBit.Cost.ofCore fixedOverhead
+
+theorem boundCovers :
+    UniformRealLinker.BoundCovers clientCertificate implementations linkedBound := by
+  intro source input final result cost steps draws calls validInput trace costBound
+  rcases calls_singleton source input validInput final result cost steps draws calls trace with
+    ⟨call, rfl, callSite⟩
+  have overhead : Linker.concreteCallOverhead implementations call = fixedOverhead := by
+    exact RandomizedIntegrationModule.concreteCallOverhead_zero call callSite
+  simp only [Linker.totalConcreteCallOverhead, List.map_cons, List.map_nil,
+    List.sum_cons, List.sum_nil, add_zero, overhead, linkedBound]
+  constructor
+  · intro coordinate
+    exact Nat.add_le_add_right (costBound.1 coordinate) (fixedOverhead coordinate)
+  · exact Nat.add_le_add_right costBound.2 0
+
+theorem linkedSuccessEvent_eq_univ (input : problem.Input) (validInput : problem.pre input) :
+    problem.SuccessEvent
+      (UniformRealLinker.link clientProgram implementations linkerConfiguration) input
+      (linkedBound (problem.inputSize input)) = Set.univ := by
+  apply Set.eq_univ_of_forall
+  intro source
+  apply UniformRealLinker.successEvent_mono_of clientCertificate implementations
+    linkerConfiguration linkedBound compatibility returnRegisterInitiallyZero boundCovers
+    input validInput
+  change source ∈ UniformRelativeSuccessEvent signature implementations.responder problem
+    clientProgram relativeBound input
+  rw [relativeSuccessEvent_eq_univ implementations.responder input validInput]
+  trivial
+
+def assumptions : UniformRealLinker.LinkingAssumptions clientCertificate implementations
+    linkerConfiguration linkedBound where
+  compatible := compatibility
+  returnRegisterInitiallyZero := returnRegisterInitiallyZero
+  boundCovers := boundCovers
+  measurableSuccess input validInput := by
+    change MeasurableSet (problem.SuccessEvent
+      (UniformRealLinker.link clientProgram implementations linkerConfiguration) input
+      (linkedBound (problem.inputSize input)))
+    rw [linkedSuccessEvent_eq_univ input validInput]
+    exact MeasurableSet.univ
+
+noncomputable def linkedCertificate :
+    problem.BoundedTimeMonteCarloAlgorithmCertificate linkedBound failure :=
+  UniformRealLinker.certificate clientCertificate implementations linkerConfiguration
+    linkedBound assumptions
+
+theorem client_unconditional :
+    problem.HasBoundedTimeMonteCarloAlgorithm linkedBound failure :=
+  UniformRealLinker.hasBoundedTimeMonteCarloAlgorithm clientCertificate implementations
+    linkerConfiguration linkedBound assumptions
+
+/-- The deterministic callee is ordinary shared body syntax, not a one-step callback. -/
+example :
+    (UniformRealLinker.link clientProgram implementations linkerConfiguration)[
+      Linker.operationBase (UniformRealLinker.placement clientProgram) implementations ()]? =
+      some (.core (Linker.relocateInstruction
+        (Linker.operationBase (UniformRealLinker.placement clientProgram) implementations ())
+        (Linker.dispatcherBase (UniformRealLinker.placement clientProgram) implementations)
+        (.halt (.literal 0)))) := by
+  exact UniformRealLinker.bodyMaterialized clientProgram implementations linkerConfiguration
+    (signature := signature) () 0 (.halt (.literal 0)) (by
+      change dependencyProgram[0]? = some (.halt (.literal 0))
+      simp [dependencyProgram,
+      DependencyImplementationModule.dependencyProgram])
+
+#print axioms client_unconditional
+
+end UniformRealConcreteIntegration
 
 end AlgoleanTests.StructuredRealRAMProcedureComposition

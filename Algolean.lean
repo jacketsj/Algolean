@@ -24,8 +24,11 @@ public import Algolean.Complexity.PolytimeBasicClasses
 public import Algolean.Complexity.RAMProblem
 public import Algolean.Complexity.RandomizedMachineProblem
 public import Algolean.Complexity.StructuredRealRAMProcedure
+public import Algolean.Complexity.StructuredRealRAMRandomizedGuarantees
 public import Algolean.Complexity.StructuredRealRAMRandomizedRelative
 public import Algolean.Complexity.StructuredRealRAMRelative
+public import Algolean.Complexity.StructuredRealRAMUniformRealRelative
+public import Algolean.Complexity.WordRAMDerivedOperations
 public import Algolean.Complexity.WordRAMProcedure
 public import Algolean.Complexity.WordRAMRelative
 public import Algolean.Complexity.WordRAMLinking
@@ -43,6 +46,8 @@ public import Algolean.Compiler.StructuredRealRAMLinkerCorrectness
 public import Algolean.Compiler.StructuredRealRAMEmbedding
 public import Algolean.Compiler.StructuredRealRAMRandomLinker
 public import Algolean.Compiler.StructuredRealRAMRandomLinkerCorrectness
+public import Algolean.Compiler.StructuredRealRAMUniformRealLinker
+public import Algolean.Compiler.StructuredRealRAMUniformRealLinkerCorrectness
 public import Algolean.Compiler.WordRAMLinker
 public import Algolean.Compiler.WordRAMLinkerCorrectness
 public import Algolean.Compiler.WordRAMRandomLinker
@@ -76,6 +81,7 @@ public import Algolean.Models.RealRAM
 public import Algolean.Models.RealRAM.ContinuousRandom
 public import Algolean.Models.RealRAM.Extensions
 public import Algolean.Models.StructuredRealRAM.Core
+public import Algolean.Models.StructuredRealRAM.ArithmeticProfile
 public import Algolean.Models.StructuredRealRAM.CanonicalLayout
 public import Algolean.Models.StructuredRealRAM.Data
 public import Algolean.Models.StructuredRealRAM.Physical
