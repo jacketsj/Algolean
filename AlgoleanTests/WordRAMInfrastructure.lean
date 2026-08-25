@@ -398,6 +398,13 @@ def initial : Memory 8 :=
 
 def reference : IndexedArrayRef 8 (List Bool) := ⟨elementLayout, 0⟩
 
+theorem initialRep :
+    (indexedArrayLayout elementLayout).RepAt (WordLayout.inputRegion 8) value initial := by
+  have represented := (indexedArrayLayout elementLayout).init_rep value fits
+  refine ⟨represented.1, ?_⟩
+  intro offset inRange
+  simpa [initial, RAM.Memory.writeAddress] using represented.2 offset inRange
+
 /-- Runtime lookup reads the canonical cached boundary for a variable-footprint element. -/
 example :
     ∃ final,
@@ -409,11 +416,47 @@ example :
   · simp [initial, RAM.Memory.writeAddress]
   · decide
   · decide
-  · change (indexedArrayLayout elementLayout).RepAt (WordLayout.inputRegion 8) value initial
-    have represented := (indexedArrayLayout elementLayout).init_rep value fits
-    refine ⟨represented.1, ?_⟩
-    intro offset inRange
-    simpa [initial, RAM.Memory.writeAddress] using represented.2 offset inRange
+  · exact initialRep
+
+/--
+The full operational lookup selects the second variable-footprint element, preserves its backing
+words, returns its exact non-wrapping address, and leaves a functional `RepAt` witness there.
+-/
+theorem selectedElementOperational :
+    ∃ final,
+      RAM.HaltingTrace (stepCosted (reference.getProgram 0 1 2 3 4 5))
+        ⟨0, initial⟩ final 0 7 7 ∧
+      final.data = initial.data ∧
+      final.address 5 = (reference.elementRegion payload 1).base ∧
+      (reference.elementRegion payload 1).base.toNat = 6 ∧
+      elementLayout.RepAt (reference.elementRegion payload 1) [false, true] final ∧
+      (reference.elementRegion payload 1).base.toNat +
+          elementLayout.footprintWords [false, true] ≤ 2 ^ 8 := by
+  have indexValue : initial.address 0 = BitVec.ofNat 8 1 := by
+    simp [initial, RAM.Memory.writeAddress]
+  rcases reference.getProgram_trace_canonical payload valid initial 1 0 1 2 3 4 5
+      indexValue (by decide) (by decide) initialRep with
+    ⟨final, trace, frame, destination⟩
+  have regionBase : (reference.elementRegion payload 1).base.toNat = 6 := by
+    native_decide
+  have selectedAtInitial :
+      elementLayout.RepAt (reference.elementRegion payload 1) [false, true] initial := by
+    refine ⟨?_, ?_⟩
+    · norm_num [elementLayout, WordLayout.FitsAt, WordLayout.Fits,
+        WordLayout.footprintWords, WordLayout.encodeList, WordLayout.encode, regionBase]
+    · intro index inRange
+      simp [elementLayout, WordLayout.footprintWords, WordLayout.encode,
+        WordLayout.encodeList] at inRange
+      have indexCases : index = 0 ∨ index = 1 ∨ index = 2 := by
+        omega
+      rcases indexCases with rfl | rfl | rfl <;> rw [regionBase] <;>
+        native_decide +revert
+  refine ⟨final, trace, frame, destination, regionBase, ?_, ?_⟩
+  · exact ⟨selectedAtInitial.1, fun index inRange ↦ by
+      rw [frame]
+      exact selectedAtInitial.2 index inRange⟩
+  · simp [regionBase, elementLayout, WordLayout.footprintWords, WordLayout.encode,
+      WordLayout.encodeList]
 
 end CanonicalIndexedLookup
 

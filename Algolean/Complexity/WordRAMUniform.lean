@@ -22,16 +22,30 @@ namespace Algolean.Algorithms.WordRAM
 
 noncomputable section
 
+/-- Widths supported by the public Word-RAM semantics. -/
+structure AdmissibleWidth where
+  value : Nat
+  atLeastTwo : 2 ≤ value
+deriving DecidableEq
+
+namespace AdmissibleWidth
+
+instance : Coe AdmissibleWidth Nat := ⟨AdmissibleWidth.value⟩
+
+def ofNat (offset : Nat) : AdmissibleWidth := ⟨offset + 2, by omega⟩
+
+end AdmissibleWidth
+
 /-- A width-indexed structured problem with an explicit admissibility promise. -/
 structure UniformStructuredProblem where
   /-- Structured problem at each target width. -/
-  problem : (w : ℕ) → StructuredProblem w
+  problem : (width : AdmissibleWidth) → StructuredProblem width.value
   /-- Explicit assumptions connecting a width to one input and all required no-overflow facts. -/
-  WidthAdmissible : (w : ℕ) → (problem w).Input → Prop
+  WidthAdmissible : (width : AdmissibleWidth) → (problem width).Input → Prop
 
 /-- A dependent exact time bound for a width-uniform problem family. -/
 abbrev UniformBound (family : UniformStructuredProblem) :=
-  (w : ℕ) → (family.problem w).Input → ℕ
+  (width : AdmissibleWidth) → (family.problem width).Input → ℕ
 
 /-- One sealed template solves every admissible width/input pair. -/
 structure UniformAlgorithmCertificate (family : UniformStructuredProblem)
@@ -39,12 +53,13 @@ structure UniformAlgorithmCertificate (family : UniformStructuredProblem)
   /-- One finite template, chosen before widths and inputs. -/
   program : UniformProgram
   /-- Every fixed structural instantiation has valid control-flow targets. -/
-  valid : ∀ w, (program.instantiate w).Valid
+  valid : ∀ (width : AdmissibleWidth), (program.instantiate width.value).Valid
   /-- Same-trace correctness for every mathematically and width-admissible input. -/
-  solves : ∀ w input, ∀ validInput : (family.problem w).pre input,
-    family.WidthAdmissible w input →
-      (family.problem w).SolvesInputWithinBy
-        (program.instantiate w) input validInput (bound w input)
+  solves : ∀ (width : AdmissibleWidth) input,
+    ∀ validInput : (family.problem width).pre input,
+    family.WidthAdmissible width input →
+      (family.problem width).SolvesInputWithinBy
+        (program.instantiate width.value) input validInput (bound width input)
 
 /-- Preferred existential width-uniform Word-RAM claim. -/
 def UniformStructuredProblem.HasUniformWordRAMAlgorithm
@@ -53,13 +68,13 @@ def UniformStructuredProblem.HasUniformWordRAMAlgorithm
 
 /-- Specialize a uniform certificate to one width while retaining its explicit admissibility. -/
 def UniformAlgorithmCertificate.atWidth
-    (certificate : UniformAlgorithmCertificate family bound) (w : ℕ)
-    (allAdmissible : ∀ input, (family.problem w).pre input →
-      family.WidthAdmissible w input) :
-    FixedWidthAlgorithmCertificateBy (family.problem w) (bound w) where
-  program := certificate.program.instantiate w
-  valid := certificate.valid w
-  solves input valid := certificate.solves w input valid (allAdmissible input valid)
+    (certificate : UniformAlgorithmCertificate family bound) (width : AdmissibleWidth)
+    (allAdmissible : ∀ input, (family.problem width).pre input →
+      family.WidthAdmissible width input) :
+    FixedWidthAlgorithmCertificateBy (family.problem width) (bound width) where
+  program := certificate.program.instantiate width.value
+  valid := certificate.valid width
+  solves input valid := certificate.solves width input valid (allAdmissible input valid)
 
 end
 

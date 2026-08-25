@@ -7,6 +7,7 @@ Authors: Algolean contributors
 module
 
 public import Algolean.Complexity.WordRAMRandomized
+public import Algolean.Complexity.StructuredRealRAMRandomizedGuarantees
 
 /-!
 # Behavioral regression tests for randomized guarantee categories
@@ -24,6 +25,20 @@ open Algolean.Algorithms
 open Algolean.Algorithms.WordRAM
 
 noncomputable section
+
+/-! The strong high-probability-time name has the same almost-sure-termination field in every
+machine model, while the pre-taxonomy alias is available only through `Legacy`. -/
+
+#check StructuredProblem.LasVegasHighProbabilityTimeCertificate.terminatesAlmostSurely
+#check BitRandomizedMachineProblem.LasVegasHighProbabilityTimeCertificate.terminatesAlmostSurely
+#check UniformRealRandomizedMachineProblem.LasVegasHighProbabilityTimeCertificate.terminatesAlmostSurely
+#check StructuredProblem.Legacy.HasRandomizedWordRAMAlgorithm
+
+/--
+error: Unknown constant
+-/
+#guard_msgs (error, substring := true) in
+#check StructuredProblem.HasRandomizedWordRAMAlgorithm
 
 def boolProblem : StructuredProblem 8 where
   widthAtLeastTwo := by omega
@@ -148,7 +163,7 @@ theorem no_trace_when_true (source : RandomBit.Source) (bit : source 0 = true) :
 def threeSteps : boolProblem.Input → Nat := fun _ ↦ 3
 def oneDraw : boolProblem.Input → Nat := fun _ ↦ 1
 
-def halfFailure : boolProblem.Input → Probability := fun _ ↦
+def halfFailure : boolProblem.Input → WordRAM.Probability := fun _ ↦
   ⟨(2 : ENNReal)⁻¹, by norm_num⟩
 
 theorem divergent_success_event :
@@ -425,12 +440,19 @@ def decisionProblem : StructuredProblem 8 where
     simp [WordLayout.FitsInput, WordLayout.FitsAt, WordLayout.Fits,
       WordLayout.footprintWords, WordLayout.encode, WordLayout.inputRegion]
 
+theorem decisionPostConsistent (input output : Bool) :
+    decisionProblem.pre input →
+      (decisionProblem.post input output ↔ ((input = true) ↔ output = true)) := by
+  intro _valid
+  cases input <;> cases output <;> simp [decisionProblem]
+
 def decisionSpec : StructuredProblem.OneSidedDecisionSpec decisionProblem where
   isYes := fun input ↦ input = true
   isNo := fun input ↦ input = false
   accepts := fun output ↦ output = true
   classified input valid := by cases input <;> simp
   disjoint input := by cases input <;> simp
+  post_consistent := decisionPostConsistent
 
 def decisionInitial (input : Bool) : Memory 8 := decisionProblem.initialMemory input trivial
 
@@ -533,7 +555,7 @@ theorem rp_trace (input : Bool) (source : RandomBit.Source) :
 
 def decisionStepBound (_ : decisionProblem.Input) : Nat := 3
 def decisionDrawBound (_ : decisionProblem.Input) : Nat := 1
-def decisionFailure (_ : decisionProblem.Input) : Probability :=
+def decisionFailure (_ : decisionProblem.Input) : WordRAM.Probability :=
   ⟨(2 : ENNReal)⁻¹, by norm_num⟩
 
 theorem rp_termination (input : Bool) (source : RandomBit.Source) :

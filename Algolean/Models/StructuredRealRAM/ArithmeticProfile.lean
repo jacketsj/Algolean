@@ -81,6 +81,50 @@ noncomputable def eval : RealUnaryPrimitive → Real → Option Real
   | .sin, value => some (Real.sin value)
   | .cos, value => some (Real.cos value)
 
+/-- On a valid nonnegative domain, the selected root is the explicit nonnegative root. -/
+theorem kthRoot_eval_nonnegative (degree : Nat) (value : Real)
+    (degreePositive : degree ≠ 0) (valueNonnegative : 0 ≤ value) :
+    eval (.kthRoot degree) value = some (value ^ ((degree : Real)⁻¹)) := by
+  simp [eval, degreePositive, not_lt.mpr valueNonnegative]
+
+/-- The nonnegative root evaluates back to its radicand. -/
+theorem kthRoot_eval_pow {degree : Nat} {value root : Real}
+    (degreePositive : degree ≠ 0) (valueNonnegative : 0 ≤ value)
+    (evaluates : eval (.kthRoot degree) value = some root) :
+    root ^ degree = value := by
+  rw [kthRoot_eval_nonnegative degree value degreePositive valueNonnegative] at evaluates
+  injection evaluates with rootEq
+  subst root
+  exact Real.rpow_inv_natCast_pow valueNonnegative degreePositive
+
+/-- The selected root is nonnegative on its nonnegative domain. -/
+theorem kthRoot_eval_result_nonnegative {degree : Nat} {value root : Real}
+    (degreePositive : degree ≠ 0) (valueNonnegative : 0 ≤ value)
+    (evaluates : eval (.kthRoot degree) value = some root) : 0 ≤ root := by
+  rw [kthRoot_eval_nonnegative degree value degreePositive valueNonnegative] at evaluates
+  injection evaluates with rootEq
+  subst root
+  exact Real.rpow_nonneg valueNonnegative _
+
+/-- The selected result is the unique nonnegative real with the required natural power. -/
+theorem kthRoot_eval_unique_nonnegative {degree : Nat} {value root candidate : Real}
+    (degreePositive : degree ≠ 0) (valueNonnegative : 0 ≤ value)
+    (evaluates : eval (.kthRoot degree) value = some root)
+    (candidateNonnegative : 0 ≤ candidate) (candidatePow : candidate ^ degree = value) :
+    candidate = root := by
+  have rootNonnegative := kthRoot_eval_result_nonnegative degreePositive valueNonnegative evaluates
+  have rootPow := kthRoot_eval_pow degreePositive valueNonnegative evaluates
+  apply (Real.rpow_left_inj candidateNonnegative rootNonnegative
+    (show (degree : Real) ≠ 0 by exact_mod_cast degreePositive)).mp
+  simpa [Real.rpow_natCast] using candidatePow.trans rootPow.symm
+
+/-- Negative odd radicands use the explicitly signed real root. -/
+theorem kthRoot_eval_negative_odd (degree : Nat) (value : Real)
+    (degreePositive : degree ≠ 0) (valueNegative : value < 0) (degreeOdd : Odd degree) :
+    eval (.kthRoot degree) value =
+      some (-((-value) ^ ((degree : Real)⁻¹))) := by
+  simp [eval, degreePositive, valueNegative, degreeOdd]
+
 end RealUnaryPrimitive
 
 /-- Closed compositional arithmetic capability index. -/
@@ -318,6 +362,20 @@ noncomputable def executeArithmetic (configuration : Configuration)
   | .namedConstant constant _ destination next =>
       ⟨.running ⟨next, configuration.memory.writeReal
         (configuration.memory.natReg destination) constant.value⟩, instruction.cost⟩
+
+/-- The resource charge is fixed by syntax, independently of domain success or machine state. -/
+theorem executeArithmetic_cost (configuration : Configuration)
+    (instruction : ArithmeticInstruction profile) :
+    (executeArithmetic configuration instruction).cost = instruction.cost := by
+  cases instruction with
+  | core => rfl
+  | unary primitive allowed source destination next =>
+      simp only [executeArithmetic]
+      split <;> rfl
+  | floorToNat allowed source destination next =>
+      simp only [executeArithmetic]
+      split <;> rfl
+  | namedConstant => rfl
 
 /-- Fetch and execute one profile-indexed instruction. -/
 noncomputable def arithmeticStep (program : ArithmeticProgram profile)

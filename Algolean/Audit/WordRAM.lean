@@ -130,6 +130,20 @@ structure DerivedOperationLibraryPublication (library : PreprocessedWordOperatio
   loweringTheorem : Lean.Name
   warnings : List String := []
 
+/-- Width-uniform rich-operation publication backed by formal asymptotic inequalities. -/
+structure UniformDerivedOperationLibraryPublication
+    (family : UniformStructuredProblem)
+    (library : UniformPreprocessedWordOperationLibrary) where
+  robustness : DerivedOperationRobustness family library
+  libraryName : Lean.Name
+  widthLowerTheorem : Lean.Name
+  widthUpperTheorem : Lean.Name
+  preprocessingTheorem : Lean.Name
+  spaceTheorem : Lean.Name
+  operationCostTheorem : Lean.Name
+  uniformityTheorem : Lean.Name
+  warnings : List String := []
+
 /-- Typed publication artifact for high-probability bounded success. -/
 structure HighProbabilityBoundedSuccessPublication (problem : StructuredProblem w)
     (stepBound drawBound : problem.Input → Nat)
@@ -466,7 +480,7 @@ noncomputable def DerivedOperationLibraryPublication.summary
   "Preprocessing table base/words: " ++ toString library.tableRegion.base.toNat ++ " / " ++
     toString library.tableWords ++ "\n" ++
   "Table after initialization: read-only for every non-initializer procedure trace\n" ++
-  "Width relation: " ++ library.assumptions.widthRelation ++ "\n" ++
+  "Width relation (descriptive metadata only): " ++ library.assumptions.widthRelation ++ "\n" ++
   "Maximum register/address: " ++ toString library.assumptions.maximumRegisterValue ++ " / " ++
     toString library.assumptions.maximumAddress ++ "\n" ++
   "Declared core space/preprocessing words: " ++ toString library.assumptions.spaceWords ++
@@ -474,6 +488,28 @@ noncomputable def DerivedOperationLibraryPublication.summary
   "Lowering: shared bodies; every initializer/operation instruction remains in the core trace\n" ++
   "Initialization theorem: " ++ toString publication.initializationTheorem ++ "\n" ++
   "Lowering theorem: " ++ toString publication.loweringTheorem ++ "\n" ++
+  "Warnings: " ++ stringList publication.warnings
+
+/-- Audit the proof-carrying asymptotic robustness layer separately from descriptive metadata. -/
+def UniformDerivedOperationLibraryPublication.summary
+    (publication : UniformDerivedOperationLibraryPublication family library) : String :=
+  let robustness := publication.robustness
+  "Claim kind: width-uniform certified derived Word-RAM operation library\n" ++
+  "Library: " ++ toString publication.libraryName ++ "\n" ++
+  "Uniformity: one finite operation signature and one sealed template per operation\n" ++
+  "Width lower inequality: proved by " ++ toString publication.widthLowerTheorem ++ "\n" ++
+  "Width upper logarithmic inequality: proved by " ++ toString publication.widthUpperTheorem ++
+    " (constant " ++ toString robustness.widthUpperConstant ++ ")\n" ++
+  "Preprocessing cost: proved linear by " ++ toString publication.preprocessingTheorem ++
+    " (constant/offset " ++ toString robustness.preprocessingLinearConstant ++ "/" ++
+    toString robustness.preprocessingLinearOffset ++ ")\n" ++
+  "Table space: proved linear by " ++ toString publication.spaceTheorem ++
+    " (constant/offset " ++ toString robustness.preprocessingSpaceConstant ++ "/" ++
+    toString robustness.preprocessingSpaceOffset ++ ")\n" ++
+  "Address-space fit: proof field addressSpaceFit\n" ++
+  "Constant per-operation cost: " ++ toString publication.operationCostTheorem ++ "\n" ++
+  "Instantiated code equals sealed template: " ++ toString publication.uniformityTheorem ++ "\n" ++
+  "Arbitrary width-indexed program family: absent\n" ++
   "Warnings: " ++ stringList publication.warnings
 
 /-- Randomized audits disclose the hidden lengthless source and both same-trace resources. -/
@@ -859,6 +895,11 @@ instance {family : WordRAM.UniformStructuredProblem} {bound : WordRAM.UniformBou
 noncomputable instance {library : WordRAM.PreprocessedWordOperationLibrary w} :
     AuditablePublication (WordRAM.Audit.DerivedOperationLibraryPublication library) :=
   ⟨WordRAM.Audit.DerivedOperationLibraryPublication.summary⟩
+
+instance {family : WordRAM.UniformStructuredProblem}
+    {library : WordRAM.UniformPreprocessedWordOperationLibrary} : AuditablePublication
+    (WordRAM.Audit.UniformDerivedOperationLibraryPublication family library) :=
+  ⟨WordRAM.Audit.UniformDerivedOperationLibraryPublication.summary⟩
 
 instance {problem : WordRAM.StructuredProblem w}
     {stepBound drawBound : problem.Input → Nat} {failure : problem.Input → WordRAM.Probability} :

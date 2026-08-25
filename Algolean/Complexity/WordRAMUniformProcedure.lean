@@ -27,6 +27,7 @@ structure CallingConventionTemplate where
   scratchStart : Nat
   scratchWords : Nat
   ownedRegisters : List Nat
+  aliasingPolicy : AliasingPolicy := .disjoint
 
 namespace CallingConventionTemplate
 
@@ -37,23 +38,27 @@ def instantiate (template : CallingConventionTemplate) (w : Nat) : CallingConven
     template.scratchStart ≤ address.toNat ∧
       address.toNat < template.scratchStart + template.scratchWords
   registerOwned register := register ∈ template.ownedRegisters
+  aliasingPolicy := template.aliasingPolicy
 
 end CallingConventionTemplate
 
 /-- A contract and exact bound at each width. -/
 structure UniformProcedureContract where
-  contract : (w : Nat) → ProcedureContract w
-  bound : (w : Nat) → ProcedureBound (contract w)
+  contract : (width : AdmissibleWidth) → ProcedureContract width.value
+  bound : (width : AdmissibleWidth) → ProcedureBound (contract width)
 
 /-- One finite template implements the whole width-indexed contract family. -/
 structure UniformProcedureCertificate (family : UniformProcedureContract) where
   program : UniformProgram
   entry : Nat
   calling : CallingConventionTemplate
-  certificateAt : (w : Nat) → RestoringProcedureCertificate (family.contract w) (family.bound w)
-  code_eq : ∀ w, (certificateAt w).module.code = program.instantiate w
-  entry_eq : ∀ w, (certificateAt w).module.entry = entry
-  calling_eq : ∀ w, (certificateAt w).calling = calling.instantiate w
+  certificateAt : (width : AdmissibleWidth) →
+    RestoringProcedureCertificate (family.contract width) (family.bound width)
+  code_eq : ∀ (width : AdmissibleWidth),
+    (certificateAt width).module.code = program.instantiate width.value
+  entry_eq : ∀ (width : AdmissibleWidth), (certificateAt width).module.entry = entry
+  calling_eq : ∀ (width : AdmissibleWidth),
+    (certificateAt width).calling = calling.instantiate width.value
 
 /-- Existential width-uniform procedure claim. -/
 def HasUniformProcedure (family : UniformProcedureContract) : Prop :=
@@ -75,18 +80,18 @@ structure UniformImplementationEnvironment (signature : UniformDependencySignatu
     UniformProcedureCertificate (signature.procedure op)
 
 /-- Specialize the contracts and declared bounds without consulting an implementation. -/
-def UniformDependencySignature.atWidth (signature : UniformDependencySignature) (w : Nat) :
-    DependencySignature w where
+def UniformDependencySignature.atWidth (signature : UniformDependencySignature)
+    (width : AdmissibleWidth) : DependencySignature width.value where
   Op := signature.Op
   finiteOp := signature.finiteOp
   decEqOp := signature.decEqOp
-  contract op := (signature.procedure op).contract w
-  bound op := (signature.procedure op).bound w
+  contract op := (signature.procedure op).contract width
+  bound op := (signature.procedure op).bound width
 
 /-- Specialize a width-uniform environment without choosing new width-indexed code. -/
 def UniformImplementationEnvironment.atWidth
-    (environment : UniformImplementationEnvironment signature) (w : Nat) :
-    ImplementationEnvironment (signature.atWidth w) where
-  implementation op := (environment.implementation op).certificateAt w
+    (environment : UniformImplementationEnvironment signature) (width : AdmissibleWidth) :
+    ImplementationEnvironment (signature.atWidth width) where
+  implementation op := (environment.implementation op).certificateAt width
 
 end Algolean.Algorithms.WordRAM

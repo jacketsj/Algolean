@@ -55,9 +55,11 @@ inductive RandomGuaranteeKind where
   | everySourceLasVegas
   | expectedTimeLasVegas
   | highProbabilityTimeLasVegas
+  | zeroErrorHighProbabilityBoundedTermination
   | almostSureLasVegas
   | expectedApproximation
   | exactSampler
+  | approximateSampler
 deriving DecidableEq, Repr
 
 /-- Complete model-independent disclosure of one randomized guarantee category. -/
@@ -135,6 +137,17 @@ def highProbabilityTimeLasVegas : RandomGuaranteeAudit where
   drawBound := "high probability"
   outputClaim := "relational"
 
+/-- Zero-error on halting runs, but with no almost-sure termination claim. -/
+def zeroErrorHighProbabilityBoundedTermination : RandomGuaranteeAudit where
+  kind := .zeroErrorHighProbabilityBoundedTermination
+  runtimeGuarantee :=
+    "bounded termination with high probability; positive-probability divergence is permitted"
+  correctnessGuarantee := "zero error on every halting run"
+  timeoutIsFailure := true
+  divergenceIsFailure := true
+  drawBound := "high probability"
+  outputClaim := "relational"
+
 def almostSureLasVegas : RandomGuaranteeAudit where
   kind := .almostSureLasVegas
   runtimeGuarantee := "almost-sure termination; no expectation bound implied"
@@ -161,6 +174,15 @@ def exactSampler : RandomGuaranteeAudit where
   divergenceIsFailure := false
   drawBound := "none unless stated separately"
   outputClaim := "distributional"
+
+def approximateSampler : RandomGuaranteeAudit where
+  kind := .approximateSampler
+  runtimeGuarantee := "every source terminates (as witnessed by the sampled output)"
+  correctnessGuarantee := "explicit distance to a target measure is at most an explicit error"
+  timeoutIsFailure := false
+  divergenceIsFailure := false
+  drawBound := "none unless stated separately"
+  outputClaim := "approximate distributional"
 
 def summary (audit : RandomGuaranteeAudit) : String :=
   "Guarantee category: " ++ reprStr audit.kind ++ "\n" ++

@@ -172,6 +172,9 @@ structure OneSidedDecisionSpec (problem : StructuredProblem w) where
   accepts : problem.Output → Prop
   classified : ∀ input, problem.pre input → isYes input ∨ isNo input
   disjoint : ∀ input, ¬ (isYes input ∧ isNo input)
+  /-- The decision view is the published problem semantics, not an unrelated classifier. -/
+  post_consistent : ∀ input output, problem.pre input →
+    (problem.post input output ↔ (isYes input ↔ accepts output))
 
 namespace OneSidedDecisionSpec
 
@@ -358,10 +361,34 @@ structure SamplerCertificate (problem : StructuredProblem w)
   distribution : ∀ input, problem.pre input →
     Measure.map (output input) RandomBit.sourceLaw = target input
 
+/-- Approximate distributional sampler with the selected distance and error in its type. -/
+structure ApproximateSamplerCertificate (problem : StructuredProblem w)
+    [MeasurableSpace problem.Output]
+    (distance : Measure problem.Output → Measure problem.Output → ENNReal)
+    (target : problem.Input → Measure problem.Output)
+    (error : problem.Input → ENNReal) where
+  program : RandomBit.Program w
+  valid : program.Valid
+  output : problem.Input → RandomBit.Source → problem.Output
+  realizes : ∀ input, ∀ validInput : problem.pre input, ∀ source,
+    ∃ run : problem.RandomSuccessfulRun program source input validInput,
+      problem.OutputRep (output input source) run.final
+  outputMeasurable : ∀ input, Measurable (output input)
+  approximate : ∀ input, problem.pre input →
+    distance (Measure.map (output input) RandomBit.sourceLaw) (target input) ≤ error input
+
 /-- Existence of one every-source terminating exact distributional sampler. -/
 def HasSamplerAlgorithm (problem : StructuredProblem w)
     [MeasurableSpace problem.Output] (target : problem.Input → Measure problem.Output) : Prop :=
   Nonempty (SamplerCertificate problem target)
+
+/-- Existence of one approximate sampler for an explicitly selected distribution distance. -/
+def HasApproximateSamplerAlgorithm (problem : StructuredProblem w)
+    [MeasurableSpace problem.Output]
+    (distance : Measure problem.Output → Measure problem.Output → ENNReal)
+    (target : problem.Input → Measure problem.Output)
+    (error : problem.Input → ENNReal) : Prop :=
+  Nonempty (ApproximateSamplerCertificate problem distance target error)
 
 /-- Strong every-source Las Vegas certificate; almost-sure termination is intentionally separate. -/
 structure EverySourceLasVegasCertificate (problem : StructuredProblem w)
@@ -379,17 +406,20 @@ def HasEverySourceLasVegasAlgorithm (problem : StructuredProblem w)
     (stepBound drawBound : problem.Input → Nat) : Prop :=
   Nonempty (EverySourceLasVegasCertificate problem stepBound drawBound)
 
-/-- Compatibility name for the former API; prefer the guarantee-specific structure name. -/
+/-! Ambiguous pre-taxonomy names are isolated from the preferred public namespace. -/
+namespace Legacy
+
 abbrev RandomizedAlgorithmCertificate (problem : StructuredProblem w)
     (stepBound drawBound : problem.Input → Nat)
     (failure : problem.Input → Probability) :=
   HighProbabilityBoundedSuccessCertificate problem stepBound drawBound failure
 
-/-- Compatibility proposition; use `HasHighProbabilityBoundedSuccessAlgorithm` in new claims. -/
 abbrev HasRandomizedWordRAMAlgorithm (problem : StructuredProblem w)
     (stepBound drawBound : problem.Input → Nat)
     (failure : problem.Input → Probability) :=
   HasHighProbabilityBoundedSuccessAlgorithm problem stepBound drawBound failure
+
+end Legacy
 
 end StructuredProblem
 

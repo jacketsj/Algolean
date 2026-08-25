@@ -603,4 +603,238 @@ theorem loweredBoundIncludesInitialization : relativeBound () < linkedBound () :
 
 end Client
 
+/-! ## Proof-carrying width-uniform robustness -/
+
+namespace UniformRobustness
+
+def contract (width : AdmissibleWidth) : ProcedureContract width.value where
+  widthAtLeastTwo := width.atLeastTwo
+  Input := Unit
+  Output := Unit
+  inputLayout := .unit
+  outputLayout := .unit
+  pre _ := True
+  post _ _ := True
+  inputFits _ _ := by simp [WordLayout.Fits]
+  outputFits _ _ _ _ := by simp [WordLayout.Fits]
+
+def bound (_width : AdmissibleWidth) : ProcedureBound (contract _width) := fun _ ↦ 1
+
+def contractFamily : UniformProcedureContract where
+  contract := contract
+  bound := bound
+
+def template : UniformProgram := ⟨[.halt (.immediate 0)]⟩
+
+def callingTemplate : CallingConventionTemplate where
+  inputBase := 0
+  outputBase := 0
+  scratchStart := 0
+  scratchWords := 0
+  ownedRegisters := []
+  aliasingPolicy := .inPlace
+
+def certificateAt (width : AdmissibleWidth) :
+    RestoringProcedureCertificate (contract width) (bound width) where
+  module := ⟨template.instantiate width.value, 0⟩
+  calling := callingTemplate.instantiate width.value
+  callingRealizes := by
+    refine {
+      inputFitsAt := ?_
+      outputFitsAt := ?_
+      inputOutputPolicy := ?_
+      scratchDisjointOutput := ?_ }
+    · intro input _
+      cases input
+      change WordLayout.unit.FitsAt ⟨0⟩ ()
+      simp [WordLayout.FitsAt, WordLayout.Fits, WordLayout.footprintWords,
+        WordLayout.encode]
+    · intro input output _ _
+      cases input
+      cases output
+      change WordLayout.unit.FitsAt ⟨0⟩ ()
+      simp [WordLayout.FitsAt, WordLayout.Fits, WordLayout.footprintWords,
+        WordLayout.encode]
+    · simp [callingTemplate, CallingConventionTemplate.instantiate]
+    · simp [callingTemplate, CallingConventionTemplate.instantiate]
+  valid := by
+    change RAM.Program.Valid ([.halt (.immediate 0)] : Program width.value) ∧ 0 < 1
+    constructor
+    · intro pc instruction fetch target member
+      rcases List.getElem?_eq_some_iff.mp fetch with ⟨pcBelow, rfl⟩
+      have pcBelow' : pc < 1 := pcBelow
+      interval_cases pc
+      simp [RAM.Instruction.successors] at member
+    · decide
+  output _ := ()
+  outputCorrect _ _ := trivial
+  correct input valid initial represented := by
+    cases input
+    let run : ProcedureRun
+        ⟨template.instantiate width.value, 0⟩ initial := {
+      final := initial
+      result := 0
+      cost := 1
+      steps := 1
+      trace := RAM.HaltingTrace.halt (by
+        simp [stepCosted, costedSemantics, RAM.CostedSemantics.step,
+          RAM.CostedSemantics.unit, template, UniformProgram.instantiate,
+          ProgramTemplate.instantiate, ProgramTemplate.instruction, ProgramTemplate.operand,
+          RAM.execute,
+          RAM.Operand.eval, WordRAM.ops]) }
+    refine ⟨run, represented, le_rfl, ?_⟩
+    exact ⟨fun _ _ _ _ ↦ rfl, fun _ _ ↦ rfl⟩
+  restoringCorrect input valid initial represented := by
+    cases input
+    let run : ProcedureRun
+        ⟨template.instantiate width.value, 0⟩ initial := {
+      final := initial
+      result := 0
+      cost := 1
+      steps := 1
+      trace := RAM.HaltingTrace.halt (by
+        simp [stepCosted, costedSemantics, RAM.CostedSemantics.step,
+          RAM.CostedSemantics.unit, template, UniformProgram.instantiate,
+          ProgramTemplate.instantiate, ProgramTemplate.instruction, ProgramTemplate.operand,
+          RAM.execute,
+          RAM.Operand.eval, WordRAM.ops]) }
+    refine ⟨run, represented, le_rfl, ?_⟩
+    change initial = WordLayout.unit.writeAt ⟨0⟩ () initial
+    cases initial
+    simp [WordLayout.writeAt, WordLayout.footprintWords, WordLayout.encode]
+
+def uniformProcedure : UniformProcedureCertificate contractFamily where
+  program := template
+  entry := 0
+  calling := callingTemplate
+  certificateAt := certificateAt
+  code_eq _ := rfl
+  entry_eq _ := rfl
+  calling_eq _ := rfl
+
+inductive Operation where
+  | initialize
+  | derived
+deriving DecidableEq, Fintype
+
+def signature : UniformDependencySignature where
+  Op := Operation
+  finiteOp := inferInstance
+  decEqOp := inferInstance
+  procedure _ := contractFamily
+
+def implementations : UniformImplementationEnvironment signature where
+  implementation _ := uniformProcedure
+
+def library : UniformPreprocessedWordOperationLibrary where
+  signature := signature
+  initializationOp := .initialize
+  initializationInput _ := ()
+  initializationInputValid _ := trivial
+  operationKind
+    | .initialize => none
+    | .derived => some .bitAnd
+  initialization_not_derived := rfl
+  implementations := implementations
+  tableWords _ := 1
+
+def problemAt (width : AdmissibleWidth) : StructuredProblem width.value where
+  widthAtLeastTwo := width.atLeastTwo
+  Input := Unit
+  Output := Unit
+  inputLayout := .unit
+  outputLayout := .unit
+  outputRegion := ⟨0⟩
+  pre _ := True
+  post _ _ := True
+  inputFits _ _ := by
+    change WordLayout.unit.FitsInput ()
+    simp [WordLayout.FitsInput, WordLayout.FitsAt, WordLayout.inputRegion,
+      WordLayout.Fits, WordLayout.footprintWords, WordLayout.encode]
+
+def problemFamily : UniformStructuredProblem where
+  problem := problemAt
+  WidthAdmissible _ _ := True
+
+def inputSize (width : AdmissibleWidth) (_ : (problemFamily.problem width).Input) : Nat :=
+  2 ^ width.value
+
+def robustness : DerivedOperationRobustness problemFamily library where
+  inputSize := inputSize
+  requiredIndexBits _ _ := 0
+  widthUpperConstant := 1
+  preprocessingLinearConstant := 1
+  preprocessingLinearOffset := 0
+  preprocessingSpaceConstant := 1
+  preprocessingSpaceOffset := 0
+  widthLower _ _ _ := Nat.zero_le _
+  widthUpper width _ _ := by
+    simp only [Nat.one_mul, inputSize]
+    apply (Nat.le_log2 (by positivity)).2
+    exact Nat.le_add_right _ _
+  preprocessingLinear width _ _ := by
+    change 1 ≤ 1 * 2 ^ width.value + 0
+    simp only [Nat.one_mul, Nat.add_zero]
+    simpa using Nat.one_le_pow' width.value 1
+  preprocessingSpace width _ _ := by
+    change 1 ≤ 1 * 2 ^ width.value + 0
+    simp only [Nat.one_mul, Nat.add_zero]
+    simpa using Nat.one_le_pow' width.value 1
+  addressSpaceFit width := by
+    change 1 ≤ 2 ^ width.value
+    simpa using Nat.one_le_pow' width.value 1
+  operationConstant op notInitialization := by
+    refine ⟨1, ?_⟩
+    intro width input valid
+    cases op <;> simp_all [library, signature, contractFamily, bound]
+
+theorem widthLowerTheorem (width : AdmissibleWidth)
+    (input : (problemFamily.problem width).Input)
+    (admissible : problemFamily.WidthAdmissible width input) :
+    robustness.requiredIndexBits width input ≤ width.value :=
+  robustness.widthLower width input admissible
+
+theorem widthUpperTheorem (width : AdmissibleWidth)
+    (input : (problemFamily.problem width).Input)
+    (admissible : problemFamily.WidthAdmissible width input) :
+    width.value ≤ robustness.widthUpperConstant *
+      Nat.log2 (robustness.inputSize width input + 2) :=
+  robustness.widthUpper width input admissible
+
+theorem preprocessingTheorem (width : AdmissibleWidth)
+    (input : (problemFamily.problem width).Input)
+    (admissible : problemFamily.WidthAdmissible width input) :
+    library.preprocessingCost width ≤
+      robustness.preprocessingLinearConstant * robustness.inputSize width input +
+        robustness.preprocessingLinearOffset :=
+  robustness.preprocessingLinear width input admissible
+
+theorem spaceTheorem (width : AdmissibleWidth)
+    (input : (problemFamily.problem width).Input)
+    (admissible : problemFamily.WidthAdmissible width input) :
+    library.tableWords width ≤
+      robustness.preprocessingSpaceConstant * robustness.inputSize width input +
+        robustness.preprocessingSpaceOffset :=
+  robustness.preprocessingSpace width input admissible
+
+def operationCostTheorem := robustness.operationConstant
+
+def uniformityTheorem := robustness.instantiatedCode_eq
+
+def publication :
+    Algolean.Algorithms.WordRAM.Audit.UniformDerivedOperationLibraryPublication
+      problemFamily library where
+  robustness := robustness
+  libraryName := ``library
+  widthLowerTheorem := ``widthLowerTheorem
+  widthUpperTheorem := ``widthUpperTheorem
+  preprocessingTheorem := ``preprocessingTheorem
+  spaceTheorem := ``spaceTheorem
+  operationCostTheorem := ``operationCostTheorem
+  uniformityTheorem := ``uniformityTheorem
+
+#algorithm_audit publication
+
+end UniformRobustness
+
 end AlgoleanTests.WordRAMDerivedOperations

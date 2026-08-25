@@ -7,6 +7,7 @@ Authors: Algolean contributors
 module
 
 public import Algolean.Complexity.WordRAMLinking
+public import Algolean.Complexity.WordRAMUniformProcedure
 
 /-!
 # Certified derived Word-RAM operation libraries
@@ -32,6 +33,7 @@ deriving DecidableEq, Repr
 
 /-- Audit-visible assumptions under which a rich operation library simulates the core model. -/
 structure DerivedOperationAssumptions (w : Nat) where
+  /-- Descriptive only; asymptotic claims must use `DerivedOperationRobustness`. -/
   widthRelation : String
   maximumRegisterValue : Nat
   maximumAddress : Nat
@@ -163,6 +165,83 @@ theorem lowerToCore_instructionCount
   Linker.link_length _ _ _
 
 end RichWordAlgorithmCertificate
+
+/-! ## Width-uniform operation-set robustness -/
+
+/-- One finite operation family with one sealed template per operation and width. -/
+structure UniformPreprocessedWordOperationLibrary where
+  signature : UniformDependencySignature
+  initializationOp : signature.Op
+  initializationInput : (width : AdmissibleWidth) →
+    ((signature.procedure initializationOp).contract width).Input
+  initializationInputValid : ∀ (width : AdmissibleWidth),
+    ((signature.procedure initializationOp).contract width).pre
+      (initializationInput width)
+  operationKind : signature.Op → Option DerivedOperationKind
+  initialization_not_derived : operationKind initializationOp = none
+  implementations : UniformImplementationEnvironment signature
+  tableWords : AdmissibleWidth → Nat
+
+namespace UniformPreprocessedWordOperationLibrary
+
+def preprocessingCost (library : UniformPreprocessedWordOperationLibrary)
+    (width : AdmissibleWidth) : Nat :=
+  (library.signature.procedure library.initializationOp).bound width
+    (library.initializationInput width)
+
+end UniformPreprocessedWordOperationLibrary
+
+/--
+Formal asymptotic robustness theorem.  Every relation formerly represented only by prose is an
+inequality, and width-uniformity follows from the finite `UniformProgram` templates stored in the
+library's certified implementation environment.
+-/
+structure DerivedOperationRobustness (family : UniformStructuredProblem)
+    (library : UniformPreprocessedWordOperationLibrary) where
+  inputSize : (width : AdmissibleWidth) → (family.problem width).Input → Nat
+  requiredIndexBits : (width : AdmissibleWidth) →
+    (family.problem width).Input → Nat
+  widthUpperConstant : Nat
+  preprocessingLinearConstant : Nat
+  preprocessingLinearOffset : Nat
+  preprocessingSpaceConstant : Nat
+  preprocessingSpaceOffset : Nat
+  widthLower : ∀ (width : AdmissibleWidth) input,
+    family.WidthAdmissible width input →
+      requiredIndexBits width input ≤ width.value
+  widthUpper : ∀ (width : AdmissibleWidth) input,
+    family.WidthAdmissible width input →
+      width.value ≤ widthUpperConstant * Nat.log2 (inputSize width input + 2)
+  preprocessingLinear : ∀ (width : AdmissibleWidth) input,
+    family.WidthAdmissible width input →
+      library.preprocessingCost width ≤
+        preprocessingLinearConstant * inputSize width input + preprocessingLinearOffset
+  preprocessingSpace : ∀ (width : AdmissibleWidth) input,
+    family.WidthAdmissible width input →
+      library.tableWords width ≤
+        preprocessingSpaceConstant * inputSize width input + preprocessingSpaceOffset
+  addressSpaceFit : ∀ (width : AdmissibleWidth),
+    library.tableWords width ≤ 2 ^ width.value
+  operationConstant : ∀ op, op ≠ library.initializationOp →
+    ∃ constant : Nat, ∀ (width : AdmissibleWidth) input,
+      ((library.signature.procedure op).contract width).pre input →
+      (library.signature.procedure op).bound width input ≤ constant
+
+namespace DerivedOperationRobustness
+
+/-- Uniformity is theorem-visible: one fixed template exists for each finite operation. -/
+def operationTemplate (_robustness : DerivedOperationRobustness family library)
+    (op : library.signature.Op) : UniformProgram :=
+  (library.implementations.implementation op).program
+
+/-- No arbitrary width-indexed program choice appears in a robustness certificate. -/
+theorem instantiatedCode_eq (robustness : DerivedOperationRobustness family library)
+    (op : library.signature.Op) (width : AdmissibleWidth) :
+    ((library.implementations.implementation op).certificateAt width).module.code =
+      (robustness.operationTemplate op).instantiate width.value :=
+  (library.implementations.implementation op).code_eq width
+
+end DerivedOperationRobustness
 
 end
 

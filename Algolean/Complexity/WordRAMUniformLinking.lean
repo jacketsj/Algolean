@@ -41,11 +41,12 @@ def successors : UniformOpenInstruction signature → List Nat
   | .call _ _ _ next => [next]
 
 /-- Fixed structural specialization to a closed width-specific call node. -/
-def instantiate (w : Nat) : UniformOpenInstruction signature →
-    OpenInstruction (signature.atWidth w)
-  | .core instruction => .core (ProgramTemplate.instruction w instruction)
+def instantiate (width : AdmissibleWidth) : UniformOpenInstruction signature →
+    OpenInstruction (signature.atWidth width)
+  | .core instruction => .core (ProgramTemplate.instruction width.value instruction)
   | .call op inputBase outputBase next =>
-      .call op ⟨BitVec.ofNat w inputBase⟩ ⟨BitVec.ofNat w outputBase⟩ next
+      .call op ⟨BitVec.ofNat width.value inputBase⟩
+        ⟨BitVec.ofNat width.value outputBase⟩ next
 
 @[simp] theorem instantiate_successors (instruction : UniformOpenInstruction signature) :
     (instruction.instantiate w).successors = instruction.successors := by
@@ -67,16 +68,16 @@ def Valid (program : UniformOpenProgram signature) : Prop :=
     ∀ target ∈ instruction.successors, target < program.length
 
 /-- Structural specialization preserves code shape. -/
-def instantiate (program : UniformOpenProgram signature) (w : Nat) :
-    OpenProgram (signature.atWidth w) :=
-  program.map (UniformOpenInstruction.instantiate w)
+def instantiate (program : UniformOpenProgram signature) (width : AdmissibleWidth) :
+    OpenProgram (signature.atWidth width) :=
+  program.map (UniformOpenInstruction.instantiate width)
 
 @[simp] theorem instantiate_length (program : UniformOpenProgram signature) :
     (program.instantiate w).length = program.length := by simp [instantiate]
 
 /-- A valid finite open template specializes to a valid finite open program at every width. -/
 theorem instantiate_valid (program : UniformOpenProgram signature) (valid : program.Valid)
-    (w : Nat) : (program.instantiate w).Valid := by
+    (width : AdmissibleWidth) : (program.instantiate width).Valid := by
   intro pc instruction fetch target successor
   simp only [instantiate, List.getElem?_map] at fetch
   rcases Option.map_eq_some_iff.mp fetch with ⟨source, sourceFetch, rfl⟩
@@ -102,9 +103,11 @@ structure UniformRelativeAlgorithmCertificate
     (bound : UniformBound family) where
   program : UniformOpenProgram signature
   valid : program.Valid
-  certificateAt : (w : Nat) →
-    RelativeAlgorithmCertificate (signature.atWidth w) (family.problem w) (bound w)
-  code_eq : ∀ w, (certificateAt w).program = program.instantiate w
+  certificateAt : (width : AdmissibleWidth) →
+    RelativeAlgorithmCertificate (signature.atWidth width)
+      (family.problem width) (bound width)
+  code_eq : ∀ (width : AdmissibleWidth),
+    (certificateAt width).program = program.instantiate width
 
 /--
 A finite target template whose every specialization is exactly the concrete linker output.
@@ -116,10 +119,10 @@ structure UniformLinkWitness (signature : UniformDependencySignature)
     (environment : UniformImplementationEnvironment signature)
     (configuration : UniformLinkerConfiguration) where
   program : UniformProgram
-  instantiate_eq : ∀ w,
-    program.instantiate w =
-      Linker.link (client.instantiate w) (environment.atWidth w)
-        (configuration.instantiate w)
+  instantiate_eq : ∀ (width : AdmissibleWidth),
+    program.instantiate width.value =
+      Linker.link (client.instantiate width) (environment.atWidth width)
+        (configuration.instantiate width.value)
 
 namespace UniformRelativeAlgorithmCertificate
 
@@ -133,35 +136,36 @@ def link
     (environment : UniformImplementationEnvironment signature)
     (configuration : UniformLinkerConfiguration)
     (witness : UniformLinkWitness signature client.program environment configuration)
-    (compatible : ∀ w,
-      Linker.Compatibility (client.certificateAt w).program (environment.atWidth w)
-        (configuration.instantiate w))
-    (overheadBound : ∀ w (input : (family.problem w).Input)
-      (validInput : (family.problem w).pre input)
-      (final : Memory w) (result : BitVec w) (cost : Nat)
-      (calls : List (DependencyCallRecord (signature.atWidth w))),
-      OpenHaltingTrace (signature.atWidth w) (environment.atWidth w).responder
-          (client.certificateAt w).program
-          ⟨0, (family.problem w).initialMemory input validInput⟩ final result cost calls →
-      cost ≤ relativeBound w input →
-      cost + Linker.totalConcreteCallOverhead (environment.atWidth w) calls ≤
-        linkedBound w input) :
+    (compatible : ∀ (width : AdmissibleWidth),
+      Linker.Compatibility (client.certificateAt width).program
+        (environment.atWidth width) (configuration.instantiate width.value))
+    (overheadBound : ∀ (width : AdmissibleWidth) (input : (family.problem width).Input)
+      (validInput : (family.problem width).pre input)
+      (final : Memory width.value) (result : BitVec width.value) (cost : Nat)
+      (calls : List (DependencyCallRecord (signature.atWidth width))),
+      OpenHaltingTrace (signature.atWidth width) (environment.atWidth width).responder
+          (client.certificateAt width).program
+          ⟨0, (family.problem width).initialMemory input validInput⟩ final result cost calls →
+      cost ≤ relativeBound width input →
+      cost + Linker.totalConcreteCallOverhead (environment.atWidth width) calls ≤
+        linkedBound width input) :
     UniformAlgorithmCertificate family linkedBound where
   program := witness.program
-  valid w := by
+  valid width := by
     rw [witness.instantiate_eq]
-    rw [← client.code_eq w]
-    exact Linker.link_valid _ _ _ (client.certificateAt w).valid
-  solves w input validInput _widthAdmissible := by
-    let concrete : FixedWidthAlgorithmCertificateBy (family.problem w) (linkedBound w) :=
-      (client.certificateAt w).linkConcrete
-        (environment.atWidth w) (configuration.instantiate w) (compatible w)
-        (overheadBound w)
+    rw [← client.code_eq width]
+    exact Linker.link_valid _ _ _ (client.certificateAt width).valid
+  solves width input validInput _widthAdmissible := by
+    let concrete : FixedWidthAlgorithmCertificateBy
+        (family.problem width) (linkedBound width) :=
+      (client.certificateAt width).linkConcrete
+        (environment.atWidth width) (configuration.instantiate width.value)
+        (compatible width) (overheadBound width)
     rw [witness.instantiate_eq]
-    rw [← client.code_eq w]
+    rw [← client.code_eq width]
     have programEq : concrete.program =
-        Linker.link (client.certificateAt w).program (environment.atWidth w)
-          (configuration.instantiate w) := rfl
+        Linker.link (client.certificateAt width).program (environment.atWidth width)
+          (configuration.instantiate width.value) := rfl
     rw [← programEq]
     exact concrete.solves input validInput
 
@@ -171,19 +175,19 @@ theorem hasUniformAlgorithm
     (environment : UniformImplementationEnvironment signature)
     (configuration : UniformLinkerConfiguration)
     (witness : UniformLinkWitness signature client.program environment configuration)
-    (compatible : ∀ w,
-      Linker.Compatibility (client.certificateAt w).program (environment.atWidth w)
-        (configuration.instantiate w))
-    (overheadBound : ∀ w (input : (family.problem w).Input)
-      (validInput : (family.problem w).pre input)
-      (final : Memory w) (result : BitVec w) (cost : Nat)
-      (calls : List (DependencyCallRecord (signature.atWidth w))),
-      OpenHaltingTrace (signature.atWidth w) (environment.atWidth w).responder
-          (client.certificateAt w).program
-          ⟨0, (family.problem w).initialMemory input validInput⟩ final result cost calls →
-      cost ≤ relativeBound w input →
-      cost + Linker.totalConcreteCallOverhead (environment.atWidth w) calls ≤
-        linkedBound w input) :
+    (compatible : ∀ (width : AdmissibleWidth),
+      Linker.Compatibility (client.certificateAt width).program
+        (environment.atWidth width) (configuration.instantiate width.value))
+    (overheadBound : ∀ (width : AdmissibleWidth) (input : (family.problem width).Input)
+      (validInput : (family.problem width).pre input)
+      (final : Memory width.value) (result : BitVec width.value) (cost : Nat)
+      (calls : List (DependencyCallRecord (signature.atWidth width))),
+      OpenHaltingTrace (signature.atWidth width) (environment.atWidth width).responder
+          (client.certificateAt width).program
+          ⟨0, (family.problem width).initialMemory input validInput⟩ final result cost calls →
+      cost ≤ relativeBound width input →
+      cost + Linker.totalConcreteCallOverhead (environment.atWidth width) calls ≤
+        linkedBound width input) :
     family.HasUniformWordRAMAlgorithm linkedBound :=
   ⟨client.link environment configuration witness compatible overheadBound⟩
 

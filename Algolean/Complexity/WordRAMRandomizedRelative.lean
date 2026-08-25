@@ -205,11 +205,15 @@ structure BoundedTimeMonteCarloRelativeCertificate (signature : DependencySignat
       (RandomRelativeCorrectEvent signature responder problem program input validInput) ≥
         1 - (failure input : ENNReal)
 
-/-- Compatibility name for the original relative bounded-success contract. -/
+/-! Ambiguous pre-taxonomy relative name, isolated from the preferred public namespace. -/
+namespace Legacy
+
 abbrev RandomRelativeAlgorithmCertificate (signature : DependencySignature w)
     (problem : StructuredProblem w) (stepBound drawBound : problem.Input → Nat)
     (failure : problem.Input → Probability) :=
   HighProbabilityBoundedSuccessRelativeCertificate signature problem stepBound drawBound failure
+
+end Legacy
 
 /--
 Proof-carrying concrete randomized link.  `program` is ordinary sealed randomized syntax, while

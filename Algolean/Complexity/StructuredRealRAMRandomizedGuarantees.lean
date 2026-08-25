@@ -89,9 +89,32 @@ structure LasVegasExpectedTimeCertificate (problem : BitRandomizedMachineProblem
   expectedRuntime : ∀ input, problem.pre input →
     ∫⁻ source, problem.runtimeENNReal program input source ∂RandomBit.sourceLaw ≤
       expectedBound (problem.inputSize input)
+  expectedBound_finite : ∀ input, problem.pre input →
+    expectedBound (problem.inputSize input) ≠ ⊤
 
 /-- Zero-error correctness with a high-probability resource bound. -/
 structure LasVegasHighProbabilityTimeCertificate (problem : BitRandomizedMachineProblem)
+    (bound : Nat → RandomBit.Cost) (timeout : problem.Input → Probability) where
+  program : RandomBit.Program
+  valid : program.Valid
+  correctOnEveryHaltingRun : problem.CorrectOnEveryHaltingRun program
+  terminationMeasurable : ∀ input, problem.pre input →
+    MeasurableSet (problem.TerminationEvent program input)
+  terminatesAlmostSurely : ∀ input, problem.pre input →
+    RandomBit.sourceLaw (problem.TerminationEvent program input) = 1
+  withinMeasurable : ∀ input, problem.pre input →
+    MeasurableSet {source | problem.TerminatesWithin program input source
+      (bound (problem.inputSize input))}
+  withinProbability : ∀ input, problem.pre input →
+    RandomBit.sourceLaw {source | problem.TerminatesWithin program input source
+      (bound (problem.inputSize input))} ≥ 1 - (timeout input : ENNReal)
+
+/--
+Weaker zero-error bounded-termination theorem.  Positive-probability divergence is explicitly
+permitted outside the measured event; this is not called Las Vegas high-probability time.
+-/
+structure ZeroErrorHighProbabilityBoundedTerminationCertificate
+    (problem : BitRandomizedMachineProblem)
     (bound : Nat → RandomBit.Cost) (timeout : problem.Input → Probability) where
   program : RandomBit.Program
   valid : program.Valid
@@ -110,6 +133,9 @@ structure OneSidedDecisionSpec (problem : BitRandomizedMachineProblem) where
   accepts : problem.Output → Prop
   classified : ∀ input, problem.pre input → isYes input ∨ isNo input
   disjoint : ∀ input, ¬ (isYes input ∧ isNo input)
+  /-- The decision view is explicitly tied to the problem's mathematical postcondition. -/
+  post_consistent : ∀ input output, problem.pre input →
+    (problem.post input output ↔ (isYes input ↔ accepts output))
 
 namespace OneSidedDecisionSpec
 
@@ -166,6 +192,22 @@ structure SamplerCertificate (problem : BitRandomizedMachineProblem)
   outputMeasurable : ∀ input, Measurable (output input)
   distribution : ∀ input, problem.pre input →
     Measure.map (output input) RandomBit.sourceLaw = target input
+
+/-- Approximate fair-bit sampler with an explicit distribution distance and error function. -/
+structure ApproximateSamplerCertificate (problem : BitRandomizedMachineProblem)
+    [MeasurableSpace problem.Output]
+    (distance : Measure problem.Output → Measure problem.Output → ENNReal)
+    (target : problem.Input → Measure problem.Output)
+    (error : problem.Input → ENNReal) where
+  program : RandomBit.Program
+  valid : program.Valid
+  output : problem.Input → RandomBit.Source → problem.Output
+  realizes : ∀ input, problem.pre input → ∀ source,
+    ∃ run : SuccessfulRun problem program input source,
+      problem.OutputRep (output input source) run.final
+  outputMeasurable : ∀ input, Measurable (output input)
+  approximate : ∀ input, problem.pre input →
+    distance (Measure.map (output input) RandomBit.sourceLaw) (target input) ≤ error input
 
 end BitRandomizedMachineProblem
 
@@ -233,6 +275,40 @@ structure LasVegasExpectedTimeCertificate (problem : UniformRealRandomizedMachin
   expectedRuntime : ∀ input, problem.pre input →
     ∫⁻ source, problem.runtimeENNReal program input source ∂UniformReal.sourceLaw ≤
       expectedBound (problem.inputSize input)
+  expectedBound_finite : ∀ input, problem.pre input →
+    expectedBound (problem.inputSize input) ≠ ⊤
+
+/-- Strong high-probability-time Las Vegas theorem, aligned with the Word-RAM convention. -/
+structure LasVegasHighProbabilityTimeCertificate
+    (problem : UniformRealRandomizedMachineProblem)
+    (bound : Nat → UniformReal.Cost) (timeout : problem.Input → Probability) where
+  program : UniformReal.Program
+  valid : program.Valid
+  correctOnEveryHaltingRun : problem.CorrectOnEveryHaltingRun program
+  terminationMeasurable : ∀ input, problem.pre input →
+    MeasurableSet (problem.TerminationEvent program input)
+  terminatesAlmostSurely : ∀ input, problem.pre input →
+    UniformReal.sourceLaw (problem.TerminationEvent program input) = 1
+  withinMeasurable : ∀ input, problem.pre input →
+    MeasurableSet {source | problem.TerminatesWithin program input source
+      (bound (problem.inputSize input))}
+  withinProbability : ∀ input, problem.pre input →
+    UniformReal.sourceLaw {source | problem.TerminatesWithin program input source
+      (bound (problem.inputSize input))} ≥ 1 - (timeout input : ENNReal)
+
+/-- Weaker exact-uniform zero-error theorem permitting divergence outside the bounded event. -/
+structure ZeroErrorHighProbabilityBoundedTerminationCertificate
+    (problem : UniformRealRandomizedMachineProblem)
+    (bound : Nat → UniformReal.Cost) (timeout : problem.Input → Probability) where
+  program : UniformReal.Program
+  valid : program.Valid
+  correctOnEveryHaltingRun : problem.CorrectOnEveryHaltingRun program
+  withinMeasurable : ∀ input, problem.pre input →
+    MeasurableSet {source | problem.TerminatesWithin program input source
+      (bound (problem.inputSize input))}
+  withinProbability : ∀ input, problem.pre input →
+    UniformReal.sourceLaw {source | problem.TerminatesWithin program input source
+      (bound (problem.inputSize input))} ≥ 1 - (timeout input : ENNReal)
 
 /-- Exact output-distribution theorem for a continuous-source sampler. -/
 structure SamplerCertificate (problem : UniformRealRandomizedMachineProblem)
@@ -246,6 +322,22 @@ structure SamplerCertificate (problem : UniformRealRandomizedMachineProblem)
   outputMeasurable : ∀ input, Measurable (output input)
   distribution : ∀ input, problem.pre input →
     Measure.map (output input) UniformReal.sourceLaw = target input
+
+/-- Approximate exact-uniform-source sampler with an explicit metric and error parameter. -/
+structure ApproximateSamplerCertificate (problem : UniformRealRandomizedMachineProblem)
+    [MeasurableSpace problem.Output]
+    (distance : Measure problem.Output → Measure problem.Output → ENNReal)
+    (target : problem.Input → Measure problem.Output)
+    (error : problem.Input → ENNReal) where
+  program : UniformReal.Program
+  valid : program.Valid
+  output : problem.Input → UniformReal.Source → problem.Output
+  realizes : ∀ input, problem.pre input → ∀ source,
+    ∃ run : SuccessfulRun problem program input source,
+      problem.OutputRep (output input source) run.final
+  outputMeasurable : ∀ input, Measurable (output input)
+  approximate : ∀ input, problem.pre input →
+    distance (Measure.map (output input) UniformReal.sourceLaw) (target input) ≤ error input
 
 end UniformRealRandomizedMachineProblem
 

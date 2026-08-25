@@ -128,8 +128,12 @@ structure BoundedTimeMonteCarloRelativeCertificate (signature : DependencySignat
       (RandomRelativeSuccessEvent signature responder problem program bound input) ≥
       1 - (failure input : ENNReal)
 
-/-- Compatibility name retained for clients written before the randomized-guarantee taxonomy. -/
+/-! Ambiguous pre-taxonomy name isolated from the preferred public namespace. -/
+namespace Legacy
+
 abbrev RandomRelativeAlgorithmCertificate := BoundedTimeMonteCarloRelativeCertificate
+
+end Legacy
 
 end
 

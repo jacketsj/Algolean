@@ -491,7 +491,7 @@ theorem relativeSuccessEvent_eq_univ
   · rfl
 
 def clientCertificate :
-    RandomRelativeAlgorithmCertificate signature problem bound failure where
+    BoundedTimeMonteCarloRelativeCertificate signature problem bound failure where
   program := clientProgram
   valid := by
     intro pc instruction fetch target member
